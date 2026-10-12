@@ -1,0 +1,24 @@
+{
+  "fishFiles": [
+    "ca_ba_duoi.webp",
+    "ca_buom.webp",
+    "ca_chep_hong.webp",
+    "ca_chep_vang.webp",
+    "ca_he_nemo.webp",
+    "ca_map.webp",
+    "ca_ngua.webp",
+    "ca_noc.webp",
+    "ca_soc_van.webp",
+    "ca_tre.webp",
+    "ca_vay_xanh.webp",
+    "ro_phi.webp"
+  ],
+  "rodFiles": [
+    "01_can-cau-go.webp",
+    "02_can-cau-may-den.webp",
+    "03_can-cau-tre.webp",
+    "04_can-cau-may-bac.webp",
+    "05_can-cau-hoang-gia.webp",
+    "06_can-cau-cau-vong.webp"
+  ]
+}

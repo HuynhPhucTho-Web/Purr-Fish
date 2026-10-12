@@ -1,0 +1,320 @@
+export interface FoodItem {
+  id: string;
+  name: string;
+  icon: string;
+  image?: string;
+  price: number;
+  foodRestore: number;      // % hunger restored (0 to 100)
+  waterRestore: number;     // % thirst restored (0 to 100)
+  xpReward: number;         // Growth XP gained
+  growthSpeedLabel: string; // Chậm, Vừa, Nhanh, Siêu Tốc,...
+  speedBadgeColor: string;
+  description: string;
+  minLevelRequired?: number;
+}
+
+export const FOOD_SHOP_CATALOG: FoodItem[] = [
+  {
+    id: '01_thuc_an_kho',
+    name: 'Thức Ăn Khô',
+    icon: '🥣',
+    image: '/images/mon_an_webp/01_thuc-an-kho.webp',
+    price: 30,
+    foodRestore: 15,
+    waterRestore: 0,
+    xpReward: 25,
+    growthSpeedLabel: 'Cơ Bản 🥣',
+    speedBadgeColor: '#9CA3AF',
+    description: 'Hạt dinh dưỡng khô giòn xốp, món ăn hàng ngày phổ biến cho mèo cưng.',
+  },
+  {
+    id: '02_thuc_an_uot',
+    name: 'Thức Ăn Ướt',
+    icon: '🍲',
+    image: '/images/mon_an_webp/02_thuc-an-uot.webp',
+    price: 75,
+    foodRestore: 25,
+    waterRestore: 15,
+    xpReward: 65,
+    growthSpeedLabel: 'Dễ Tiêu 🍲',
+    speedBadgeColor: '#10B981',
+    description: 'Thức ăn ướt mềm mại đậm đà nước sốt thịt xé nhỏ, thơm ngon dễ tiêu hóa.',
+  },
+  {
+    id: '03_thuc_an_dong_hop',
+    name: 'Thức Ăn Đóng Hộp',
+    icon: '🥫',
+    image: '/images/mon_an_webp/03_thuc-an-dong-hop.webp',
+    price: 160,
+    foodRestore: 35,
+    waterRestore: 15,
+    xpReward: 130,
+    growthSpeedLabel: 'Tiện Lợi 🥫',
+    speedBadgeColor: '#0EA5E9',
+    description: 'Pate lon đóng hộp tiệt trùng giữ trọn hương vị tươi, bổ sung vitamin thiết yếu.',
+  },
+  {
+    id: '04_ca_tuoi',
+    name: 'Cá Tươi',
+    icon: '🐟',
+    image: '/images/mon_an_webp/04_ca-tuoi.webp',
+    price: 300,
+    foodRestore: 45,
+    waterRestore: 15,
+    xpReward: 250,
+    growthSpeedLabel: 'Tươi Ngon 🐟',
+    speedBadgeColor: '#3B82F6',
+    description: 'Cá tươi phi lê giàu protein tự nhiên, giúp mèo phát triển cơ bắp săn chắc.',
+  },
+  {
+    id: '05_ca_nguyen_con',
+    name: 'Cá Nguyên Con',
+    icon: '🐟',
+    image: '/images/mon_an_webp/05_ca-nguyen-con.webp',
+    price: 550,
+    foodRestore: 55,
+    waterRestore: 20,
+    xpReward: 460,
+    growthSpeedLabel: 'Hấp Dẫn 🐾',
+    speedBadgeColor: '#6366F1',
+    description: 'Cá biển nguyên con tươi rói vừa đánh bắt, kích thích bản năng săn mồi của mèo.',
+  },
+  {
+    id: '06_tom',
+    name: 'Tôm',
+    icon: '🦐',
+    image: '/images/mon_an_webp/06_tom.webp',
+    price: 900,
+    foodRestore: 60,
+    waterRestore: 15,
+    xpReward: 780,
+    growthSpeedLabel: 'Giàu Canxi 🦐',
+    speedBadgeColor: '#F97316',
+    description: 'Tôm bóc nõn ngọt béo, dồi dào canxi và khoáng chất cho xương khớp dẻo dai.',
+  },
+  {
+    id: '07_thit_ga',
+    name: 'Thịt Gà',
+    icon: '🍗',
+    image: '/images/mon_an_webp/07_thit-ga.webp',
+    price: 1400,
+    foodRestore: 65,
+    waterRestore: 10,
+    xpReward: 1200,
+    growthSpeedLabel: 'Nhiều Đạm 🍗',
+    speedBadgeColor: '#EAB308',
+    description: 'Ức gà luộc xé sợi thanh đạm, ít béo, cung cấp năng lượng dồi dào cho cả ngày.',
+  },
+  {
+    id: '08_ca_moi',
+    name: 'Cá Mòi',
+    icon: '🐟',
+    image: '/images/mon_an_webp/08_ca-moi.webp',
+    price: 2000,
+    foodRestore: 70,
+    waterRestore: 20,
+    xpReward: 1750,
+    growthSpeedLabel: 'Omega-3 🌊',
+    speedBadgeColor: '#06B6D4',
+    description: 'Cá mòi đại dương ngâm dầu béo ngậy, bùng nổ Omega-3 giúp bộ lông óng mượt.',
+  },
+  {
+    id: '09_sua',
+    name: 'Sữa',
+    icon: '🥛',
+    image: '/images/mon_an_webp/09_sua.webp',
+    price: 60,
+    foodRestore: 10,
+    waterRestore: 50,
+    xpReward: 50,
+    growthSpeedLabel: 'Giải Khát 🥛',
+    speedBadgeColor: '#38BDF8',
+    description: 'Sữa tươi tách lactose an toàn cho hệ tiêu hóa, giải khát tức thì cho mèo cưng.',
+  },
+  {
+    id: '10_sua_bot',
+    name: 'Sữa Bột',
+    icon: '🍼',
+    image: '/images/mon_an_webp/10_sua-bot.webp',
+    price: 2800,
+    foodRestore: 45,
+    waterRestore: 60,
+    xpReward: 2500,
+    growthSpeedLabel: 'Bổ Dưỡng 🍼',
+    speedBadgeColor: '#A855F7',
+    description: 'Sữa bột dinh dưỡng công thức đặc biệt, tăng cường kháng thể và thể lực vượt bậc.',
+  },
+  {
+    id: '11_banh_thuong',
+    name: 'Bánh Thưởng',
+    icon: '🍪',
+    image: '/images/mon_an_webp/11_banh-thuong.webp',
+    price: 120,
+    foodRestore: 20,
+    waterRestore: 0,
+    xpReward: 95,
+    growthSpeedLabel: 'Thưởng 🍪',
+    speedBadgeColor: '#F59E0B',
+    description: 'Bánh thưởng giòn rụm nhân phô mai béo ngậy, món quà ngọt ngào kích lệ mèo ngoan.',
+  },
+  {
+    id: '12_co_meo',
+    name: 'Cỏ Mèo',
+    icon: '🌿',
+    image: '/images/mon_an_webp/12_co-meo.webp',
+    price: 200,
+    foodRestore: 15,
+    waterRestore: 10,
+    xpReward: 160,
+    growthSpeedLabel: 'Catnip Thư Giãn 🌿',
+    speedBadgeColor: '#22C55E',
+    description: 'Cỏ lúa mạch non & Catnip tươi mát giúp tiêu búi lông, thư giãn tinh thần tuyệt đối.',
+  },
+  {
+    id: '13_thuc_an_tu_nau',
+    name: 'Thức Ăn Tự Nấu',
+    icon: '🍲',
+    image: '/images/mon_an_webp/13_thuc-an-tu-nau.webp',
+    price: 4500,
+    foodRestore: 85,
+    waterRestore: 30,
+    xpReward: 4200,
+    growthSpeedLabel: 'Tự Nấu ❤️',
+    speedBadgeColor: '#EC4899',
+    description: 'Mâm cơm sen tự tay chuẩn bị đầy đủ thịt cá rau củ, đong đầy yêu thương và dưỡng chất.',
+  },
+  {
+    id: '14_mon_ngon_dac_biet',
+    name: 'Món Ngon Đặc Biệt',
+    icon: '🍱',
+    image: '/images/mon_an_webp/14_mon-ngon-dac-biet.webp',
+    price: 8500,
+    foodRestore: 95,
+    waterRestore: 40,
+    xpReward: 8200,
+    growthSpeedLabel: 'Đặc Biệt ✨',
+    speedBadgeColor: '#D946EF',
+    description: 'Set ẩm thực mỹ vị thượng hạng phối hợp sơn hào hải vị, mèo ăn vào thăng cấp vùn vụt.',
+  },
+  {
+    id: '15_thuc_an_cao_cap',
+    name: 'Thức Ăn Cao Cấp',
+    icon: '👑',
+    image: '/images/mon_an_webp/15_thuc-an-cao-cap.webp',
+    price: 16000,
+    foodRestore: 100,
+    waterRestore: 50,
+    xpReward: 16500,
+    growthSpeedLabel: 'Hoàng Gia 👑',
+    speedBadgeColor: '#EF4444',
+    description: 'Bữa tiệc hoàng gia xa xỉ đỉnh cao dành riêng cho mèo quý tộc, kích hoạt hào quang đế vương!',
+  },
+];
+
+export interface MealPlan {
+  id: string;
+  name: string;
+  durationLabel: string;
+  icon: string;
+  price: number;
+  discountPercent: number;
+  originalPrice: number;
+  badge: string;
+  badgeColor: string;
+  description: string;
+  itemsIncluded: { name: string; quantity: number; icon: string; image?: string }[];
+  foodRestoreTotal: number;
+  waterRestoreTotal: number;
+  xpRewardTotal: number;
+  autoFeedMealsCount: number; // Số bữa ăn tự động dự trữ khi mèo đói
+}
+
+export const MEAL_PLANS_CATALOG: MealPlan[] = [
+  {
+    id: 'plan_starter_1d',
+    name: 'Kế Hoạch Khởi Nghiệp (1 Ngày)',
+    durationLabel: 'Kế Hoạch 1 Ngày',
+    icon: '🥣',
+    price: 270,
+    discountPercent: 18,
+    originalPrice: 330,
+    badge: 'Tiết Kiệm 🐾',
+    badgeColor: '#10B981',
+    description: 'Kế hoạch dinh dưỡng tiêu chuẩn 1 ngày gồm Thức Ăn Khô, Sữa và Bánh Thưởng, tiết kiệm 18% cho người mới bắt đầu.',
+    itemsIncluded: [
+      { name: 'Thức Ăn Khô', quantity: 3, icon: '🥣', image: '/images/mon_an_webp/01_thuc-an-kho.webp' },
+      { name: 'Sữa', quantity: 2, icon: '🥛', image: '/images/mon_an_webp/09_sua.webp' },
+      { name: 'Bánh Thưởng', quantity: 1, icon: '🍪', image: '/images/mon_an_webp/11_banh-thuong.webp' },
+    ],
+    foodRestoreTotal: 65,
+    waterRestoreTotal: 100,
+    xpRewardTotal: 250,
+    autoFeedMealsCount: 3,
+  },
+  {
+    id: 'plan_growth_3d',
+    name: 'Kế Hoạch Tăng Trưởng (3 Ngày)',
+    durationLabel: 'Kế Hoạch 3 Ngày',
+    icon: '🐟',
+    price: 1050,
+    discountPercent: 20,
+    originalPrice: 1300,
+    badge: 'Phát Triển ⚡',
+    badgeColor: '#3B82F6',
+    description: 'Chế độ ăn giàu đạm Cá Tươi và Thức Ăn Ướt kèm Cỏ Mèo giúp phát triển thể chất nhanh chóng, bổ sung năng lượng dồi dào.',
+    itemsIncluded: [
+      { name: 'Thức Ăn Ướt', quantity: 4, icon: '🍲', image: '/images/mon_an_webp/02_thuc-an-uot.webp' },
+      { name: 'Cá Tươi', quantity: 2, icon: '🐟', image: '/images/mon_an_webp/04_ca-tuoi.webp' },
+      { name: 'Cỏ Mèo', quantity: 2, icon: '🌿', image: '/images/mon_an_webp/12_co-meo.webp' },
+    ],
+    foodRestoreTotal: 85,
+    waterRestoreTotal: 90,
+    xpRewardTotal: 1300,
+    autoFeedMealsCount: 6,
+  },
+  {
+    id: 'plan_royal_7d',
+    name: 'Kế Hoạch Dinh Dưỡng Hoàng Gia (7 Ngày)',
+    durationLabel: 'Kế Hoạch 7 Ngày',
+    icon: '👑',
+    price: 11500,
+    discountPercent: 22,
+    originalPrice: 14600,
+    badge: 'Hoàng Gia 👑',
+    badgeColor: '#8B5CF6',
+    description: 'Gói chăm sóc cao cấp suốt 7 ngày với Tôm, Thịt Gà, Cá Mòi và Sữa Bột, mèo luôn no múp míp và hào quang rực rỡ.',
+    itemsIncluded: [
+      { name: 'Tôm', quantity: 4, icon: '🦐', image: '/images/mon_an_webp/06_tom.webp' },
+      { name: 'Thịt Gà', quantity: 3, icon: '🍗', image: '/images/mon_an_webp/07_thit-ga.webp' },
+      { name: 'Cá Mòi', quantity: 2, icon: '🐟', image: '/images/mon_an_webp/08_ca-moi.webp' },
+      { name: 'Sữa Bột', quantity: 1, icon: '🍼', image: '/images/mon_an_webp/10_sua-bot.webp' },
+    ],
+    foodRestoreTotal: 100,
+    waterRestoreTotal: 100,
+    xpRewardTotal: 12000,
+    autoFeedMealsCount: 15,
+  },
+  {
+    id: 'plan_chonky_vip',
+    name: 'Kế Hoạch Vỗ Béo Chonky Siêu Cấp (VIP)',
+    durationLabel: 'Kế Hoạch VIP Thần Tốc',
+    icon: '🍱',
+    price: 52000,
+    discountPercent: 25,
+    originalPrice: 66500,
+    badge: 'Đại Gia 🔥',
+    badgeColor: '#EF4444',
+    description: 'Bữa tiệc đế vương đỉnh cao với Thức Ăn Cao Cấp, Món Ngon Đặc Biệt và Thức Ăn Tự Nấu! Thăng cấp level thần tốc, tiến hóa thành Mèo Béo Vĩ Đại.',
+    itemsIncluded: [
+      { name: 'Thức Ăn Cao Cấp', quantity: 2, icon: '👑', image: '/images/mon_an_webp/15_thuc-an-cao-cap.webp' },
+      { name: 'Món Ngon Đặc Biệt', quantity: 3, icon: '🍱', image: '/images/mon_an_webp/14_mon-ngon-dac-biet.webp' },
+      { name: 'Thức Ăn Tự Nấu', quantity: 2, icon: '🍲', image: '/images/mon_an_webp/13_thuc-an-tu-nau.webp' },
+    ],
+    foodRestoreTotal: 100,
+    waterRestoreTotal: 100,
+    xpRewardTotal: 65000,
+    autoFeedMealsCount: 30,
+  },
+];
+
+
