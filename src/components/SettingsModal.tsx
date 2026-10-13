@@ -29,6 +29,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [confirmReset, setConfirmReset] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
+  const [swingSpeed, setSwingSpeed] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('PURR_FISH_SWING_SPEED');
+      if (saved) {
+        const val = parseFloat(saved);
+        if (!isNaN(val) && val >= 0.3 && val <= 2.0) return val;
+      }
+    } catch {
+      // fallback
+    }
+    return 1.0;
+  });
+
   if (!isOpen) return null;
 
   const showFeedback = (text: string, type: 'success' | 'error') => {
@@ -71,7 +84,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="modal-header">
           <div className="modal-title-row">
             <span className="modal-header-icon">⚙️</span>
-            <h2 className="modal-title">Cài Đặt Game</h2>
+            <h2 className="modal-title">Cài Đặt</h2>
           </div>
           <button type="button" className="close-btn" onClick={onClose} aria-label="Đóng cài đặt">
             ✕
@@ -85,30 +98,75 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         )}
 
         <div className="settings-body">
-          {/* Toggles Group */}
+          {/* Section 1: Âm thanh */}
           <section className="settings-section">
-            <h3 className="section-label">Âm Thanh & Hiệu Ứng</h3>
+            <h3 className="section-label">🔊 Âm Thanh</h3>
             
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-name">🔊 Âm thanh (SFX)</span>
-                <span className="setting-desc">Tiếng pop, meow và hiệu ứng mua sắm</span>
+            {/* SFX */}
+            <div className="setting-item">
+              <div className="setting-row">
+                <span className="setting-name">Hiệu ứng (SFX)</span>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={settings.soundEnabled}
+                    onChange={(e) => onUpdateSettings({ soundEnabled: e.target.checked })}
+                  />
+                  <span className="slider round" />
+                </label>
               </div>
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={settings.soundEnabled}
-                  onChange={(e) => onUpdateSettings({ soundEnabled: e.target.checked })}
-                />
-                <span className="slider round" />
-              </label>
+              {settings.soundEnabled && (
+                <div className="setting-slider-row">
+                  <span className="slider-icon">🔉</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={settings.sfxVolume ?? 80}
+                    onChange={(e) => onUpdateSettings({ sfxVolume: Number(e.target.value) })}
+                    className="volume-slider"
+                  />
+                  <span className="slider-val">{settings.sfxVolume ?? 80}%</span>
+                </div>
+              )}
             </div>
 
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-name">✨ Hạt lấp lánh (Particles)</span>
-                <span className="setting-desc">Tia sáng và hiệu ứng nổi khi chạm</span>
+            {/* BGM */}
+            <div className="setting-item">
+              <div className="setting-row">
+                <span className="setting-name">Nhạc nền (BGM)</span>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={settings.musicEnabled ?? true}
+                    onChange={(e) => onUpdateSettings({ musicEnabled: e.target.checked })}
+                  />
+                  <span className="slider round" />
+                </label>
               </div>
+              {(settings.musicEnabled ?? true) && (
+                <div className="setting-slider-row">
+                  <span className="slider-icon">🎼</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={settings.musicVolume ?? 50}
+                    onChange={(e) => onUpdateSettings({ musicVolume: Number(e.target.value) })}
+                    className="volume-slider"
+                  />
+                  <span className="slider-val">{settings.musicVolume ?? 50}%</span>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Section 2: Hiệu ứng & Điều khiển */}
+          <section className="settings-section">
+            <h3 className="section-label">✨ Hiệu Ứng & Điều Khiển</h3>
+
+            <div className="setting-row">
+              <span className="setting-name">Hiệu ứng hạt</span>
               <label className="switch">
                 <input
                   type="checkbox"
@@ -120,10 +178,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-name">📳 Rung phản hồi (Haptics)</span>
-                <span className="setting-desc">Rung nhẹ khi chạm trên điện thoại</span>
-              </div>
+              <span className="setting-name">Rung phản hồi</span>
               <label className="switch">
                 <input
                   type="checkbox"
@@ -135,10 +190,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-name">🐱 Phong cách đồ họa mèo</span>
-                <span className="setting-desc">Chọn phong cách hình ảnh mèo</span>
-              </div>
+              <span className="setting-name">Đồ họa mèo</span>
               <div className="theme-toggle-btns">
                 <button
                   type="button"
@@ -152,22 +204,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className={`theme-pill ${settings.visualTheme === 'sticker_art' ? 'pill-active' : ''}`}
                   onClick={() => onUpdateSettings({ visualTheme: 'sticker_art' })}
                 >
-                  Sticker Ảnh
+                  Sticker
                 </button>
+              </div>
+            </div>
+
+            <div className="setting-item">
+              <div className="setting-row">
+                <span className="setting-name">Tốc độ quay cần</span>
+                <span className="slider-val">{swingSpeed.toFixed(1)}x</span>
+              </div>
+              <div className="setting-slider-row">
+                <input
+                  type="range"
+                  min="0.5"
+                  max="1.8"
+                  step="0.1"
+                  value={swingSpeed}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setSwingSpeed(val);
+                    localStorage.setItem('PURR_FISH_SWING_SPEED', val.toString());
+                  }}
+                  className="volume-slider"
+                />
               </div>
             </div>
           </section>
 
-          {/* Save / Load Management */}
+          {/* Section 3: Sao lưu */}
           <section className="settings-section">
-            <h3 className="section-label">Lưu & Khôi Phục Tiến Trình</h3>
+            <h3 className="section-label">💾 Dữ Liệu & Sao Lưu</h3>
             
             <div className="save-actions-grid">
               <button type="button" className="action-btn save-btn" onClick={onSaveNow}>
-                💾 {saveStatus === 'saved' ? 'Đã Lưu Thành Công!' : 'Lưu Ngay Vào Máy'}
+                💾 {saveStatus === 'saved' ? 'Đã Lưu!' : 'Lưu Máy'}
               </button>
               <button type="button" className="action-btn export-btn" onClick={handleExport}>
-                📋 Sao Chép Mã Lưu
+                📋 Xuất Mã
               </button>
             </div>
 
@@ -178,7 +252,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   value={exportCode}
                   className="code-textarea"
                   rows={2}
-                  title="Mã sao lưu tiến trình"
+                  title="Mã sao lưu"
                 />
               </div>
             )}
@@ -186,37 +260,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="import-row">
               <input
                 type="text"
-                placeholder="Dán mã lưu để khôi phục..."
+                placeholder="Dán mã sao lưu..."
                 value={importCode}
                 onChange={(e) => setImportCode(e.target.value)}
                 className="import-input"
               />
               <button type="button" className="import-btn" onClick={handleImport}>
-                Tải Lưu
+                Nhập
               </button>
             </div>
           </section>
 
-          {/* Reset Game Section */}
+          {/* Section 4: Đặt lại */}
           <section className="settings-section danger-section">
-            <h3 className="section-label danger-label">Dữ Liệu Trò Chơi</h3>
             {!confirmReset ? (
               <button
                 type="button"
                 className="danger-btn"
                 onClick={() => setConfirmReset(true)}
               >
-                🗑️ Đặt Lại Trò Chơi (Reset Toàn Bộ)
+                🗑️ Đặt Lại Tiến Trình
               </button>
             ) : (
               <div className="confirm-reset-box">
-                <p className="confirm-text">⚠️ Bạn có chắc muốn xóa toàn bộ tiến trình không?</p>
+                <p className="confirm-text">Xóa toàn bộ dữ liệu game?</p>
                 <div className="confirm-btns-row">
                   <button type="button" className="confirm-yes-btn" onClick={handleConfirmReset}>
-                    Chắc Chắn Xóa
+                    Xóa Hết
                   </button>
                   <button type="button" className="confirm-no-btn" onClick={() => setConfirmReset(false)}>
-                    Hủy Bỏ
+                    Hủy
                   </button>
                 </div>
               </div>

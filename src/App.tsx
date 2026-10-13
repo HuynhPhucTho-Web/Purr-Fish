@@ -7,15 +7,15 @@ import { CatCharacter } from './components/CatCharacter';
 import { BottomNavBar, type AppPage } from './components/BottomNavBar';
 import { FishPond } from './components/FishPond';
 import { BackpackView } from './components/BackpackView';
+import { FashionShopView } from './components/FashionShopView';
 import { FoodShopMealPlanView } from './components/FoodShopMealPlanView';
 import { UpgradeSkinView } from './components/UpgradeSkinView';
 import { LeaderboardView } from './components/LeaderboardView';
 import { AccountSettingsView } from './components/AccountSettingsView';
 import { AuthModal } from './components/AuthModal';
+import { SettingsModal } from './components/SettingsModal';
 import { FloatingReward } from './components/FloatingReward';
 import { authService } from './services/authService';
-import { SKINS } from './data/skins';
-import { formatNumber } from './utils/economy';
 import './styles/game.css';
 
 export const App: React.FC = () => {
@@ -25,7 +25,6 @@ export const App: React.FC = () => {
     currentUser,
     levelInfo,
     catStage,
-    baseClickPower,
     actualClickPower,
     autoFishRate,
     comboCount,
@@ -42,8 +41,6 @@ export const App: React.FC = () => {
     sellAllFish,
     buyFoodToInventory,
     feedCatFromInventory,
-    buyAndFeed,
-    buyMultipleFood,
     buyMealPlan,
     giveWater,
     handleClick,
@@ -90,7 +87,7 @@ export const App: React.FC = () => {
   const [activePage, setActivePage] = useState<AppPage>('cat');
 
   // Subtab memory for quick-jump transitions
-  const [shopSubTab, setShopSubTab] = useState<'upgrades' | 'skins'>('upgrades');
+  const [shopSubTab] = useState<'upgrades' | 'skins'>('upgrades');
   const [accountSubTab, setAccountSubTab] = useState<'account' | 'settings'>('account');
 
   // Màn hình Tạo Tài Khoản / Đăng Nhập: Hiển thị lên trước tiên khi vào game nếu chưa có tài khoản chính thức
@@ -98,6 +95,9 @@ export const App: React.FC = () => {
     const cur = authService.getCurrentUser();
     return !cur || cur.isAnonymous;
   });
+
+  // Modal Cài Đặt (Mở nhanh từ nút bánh răng ⚙️ trên header)
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
 
   const basketCount = Array.isArray(state.fishBasket) ? state.fishBasket.length : 0;
 
@@ -119,6 +119,8 @@ export const App: React.FC = () => {
             ? '• Hồ Câu'
             : activePage === 'basket'
             ? '• Balo Của Boss'
+            : activePage === 'fashion'
+            ? '• Shop Thời Trang'
             : activePage === 'food'
             ? '• Ăn Uống'
             : activePage === 'shop'
@@ -137,10 +139,7 @@ export const App: React.FC = () => {
             setActivePage('account');
           }
         }}
-        onOpenSettings={() => {
-          setAccountSubTab('settings');
-          setActivePage('account');
-        }}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
       {/* 2. DEDICATED VIEW PAGES */}
@@ -174,6 +173,7 @@ export const App: React.FC = () => {
               catStage={catStage}
               onOpenPond={() => setActivePage('pond')}
               onOpenFoodShop={() => setActivePage('food')}
+              onOpenFashionShop={() => setActivePage('fashion')}
               onOpenBasket={() => setActivePage('basket')}
               onFeedFromInventory={feedCatFromInventory}
               onGiveWater={giveWater}
@@ -193,6 +193,7 @@ export const App: React.FC = () => {
             basketCount={basketCount}
             equippedRodId={equippedRodId}
             rodDurability={rodDurability}
+            unlockedRods={unlockedRods}
             onCatchFish={catchPondFish}
             onBuyRod={buyOrEquipRod}
             onUseRodDurability={useRodDurability}
@@ -222,14 +223,31 @@ export const App: React.FC = () => {
             catStage={catStage}
             onSellFish={sellFish}
             onSellAllFish={sellAllFish}
-            onEquipSkin={equipSkin}
+            onEquipSkin={(skinId) => { equipSkin(skinId); return true; }}
             onUnlockSkin={unlockSkin}
             onBuyOrEquipRod={buyOrEquipRod}
             onEquipFashionItem={equipFashionDecorItem}
-            onOpenFashionShop={() => setActivePage('cat')}
+            onOpenFashionShop={() => setActivePage('fashion')}
             onFeedFromInventory={feedCatFromInventory}
             onOpenPond={() => setActivePage('pond')}
             onOpenFoodShop={() => setActivePage('food')}
+            onBackToCat={() => setActivePage('cat')}
+          />
+        )}
+
+        {/* PAGE 4: SHOP THỜI TRANG & TRANG TRÍ PHÒNG (DEDICATED FULL VIEW) */}
+        {activePage === 'fashion' && (
+          <FashionShopView
+            coins={state.fish}
+            currentSkin={currentSkin}
+            ownedHats={ownedHats}
+            equippedHat={equippedHat}
+            ownedClothes={ownedClothes}
+            equippedClothes={equippedClothes}
+            ownedRoomDecor={ownedRoomDecor}
+            equippedDecor={equippedDecor}
+            onBuyItem={buyFashionDecorItem}
+            onEquipItem={equipFashionDecorItem}
             onBackToCat={() => setActivePage('cat')}
           />
         )}
@@ -333,6 +351,19 @@ export const App: React.FC = () => {
           initialTab="register"
         />
       )}
+
+      {/* 6. Settings Modal (Bật lên từ Nút Bánh Răng ⚙️ trên header) */}
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        settings={state.settings}
+        onUpdateSettings={updateSettings}
+        onSaveNow={saveNow}
+        saveStatus={saveStatus}
+        onResetGame={resetGame}
+        onExportSave={exportSave}
+        onImportSave={importSave}
+      />
     </div>
   );
 };

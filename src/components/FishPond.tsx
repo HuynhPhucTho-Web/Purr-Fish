@@ -29,6 +29,7 @@ interface FishPondProps {
   basketCount: number;
   equippedRodId?: string;
   rodDurability?: number;
+  unlockedRods?: string[];
   onCatchFish: (species: FishSpecies) => CaughtFishItem;
   onBuyRod?: (rodId: string) => { success: boolean; message: string };
   onUseRodDurability?: () => number;
@@ -97,14 +98,13 @@ function rollFishForRod(rod: FishingRod, excludeIds: string[] = []): FishSpecies
 export const FishPond: React.FC<FishPondProps> = ({
   currentSkin,
   fish,
-  basketCount,
   equippedRodId = 'wood_rod',
   rodDurability = 10,
+  unlockedRods = ['wood_rod'],
   onCatchFish,
   onBuyRod,
   onUseRodDurability,
   onOpenBasket,
-  onClose,
 }) => {
   const pondRef = useRef<HTMLDivElement>(null);
 
@@ -112,6 +112,7 @@ export const FishPond: React.FC<FishPondProps> = ({
   const [activeRodId, setActiveRodId] = useState<string>(equippedRodId);
   const [durability, setDurability] = useState<number>(rodDurability);
   const [isRodShopOpen, setIsRodShopOpen] = useState<boolean>(false);
+  const [rodModalTab, setRodModalTab] = useState<'owned' | 'shop'>('owned');
   const [brokenAlert, setBrokenAlert] = useState<string | null>(null);
 
   const currentRod: FishingRod = getRodById(activeRodId);
@@ -317,12 +318,14 @@ export const FishPond: React.FC<FishPondProps> = ({
     soundManager.playWaterSplash();
     soundManager.triggerHaptic(60);
 
-    const instantReward = Math.max(5, Math.round(caughtItem.sellPrice * 0.25));
-    const xpReward = Math.round(caughtItem.weightKg * 14 * (caught.species.difficultyLevel || 1));
+    const xpReward = Math.max(
+      1,
+      Math.round(Math.sqrt(caughtItem.weightKg) * 2.2 * (caught.species.difficultyLevel || 1))
+    );
 
     setCatchToast({
       text: `🎣 TÓM ĐƯỢC ${caughtItem.name.toUpperCase()}!`,
-      sub: `⚖️ Nặng ${caughtItem.weightKg} kg • +${formatNumber(instantReward)} xu 🪙 • +${formatNumber(xpReward)} XP (Đã vào giỏ)`,
+      sub: `⚖️ Nặng ${caughtItem.weightKg} kg • +${formatNumber(xpReward)} XP • Bán được ${formatNumber(caughtItem.sellPrice)} xu trong giỏ cá`,
     });
     setTimeout(() => setCatchToast(null), 3000);
 
@@ -455,7 +458,7 @@ export const FishPond: React.FC<FishPondProps> = ({
       // GHI NHỚ HÀNH TRÌNH XOAY (Không xoay lại từ đầu khi phóng trượt/trúng cá)
       // Tốc độ xoay chậm hơn & có thể điều chỉnh qua nút tốc độ
       if (phase === 'SWINGING') {
-        const baseSpeed = 0.58; // deg/frame ở chuẩn 60fps
+        const baseSpeed = 0.80; // Tăng tốc độ lắc cần câu để tăng độ khó căn thời điểm quăng
         const speedStep = baseSpeed * (swingSpeedRef.current || 1.0) * dt;
 
         rodAngleRef.current += rodDirRef.current * speedStep;
@@ -561,15 +564,15 @@ export const FishPond: React.FC<FishPondProps> = ({
         hookPosRef.current = { x: nextX, y: nextY };
         setHookPos({ x: nextX, y: nextY });
 
-        // Tìm tất cả các con cá nằm trong tầm va chạm của lưỡi câu
+        // Tìm tất cả các con cá nằm trong tầm va chạm của lưỡi câu (Hardcore Hitbox thu hẹp)
         const candidates: ActiveSwimmingFish[] = [];
 
         for (const f of list) {
           if (f.isCaught || f.isEscaped) continue;
           const dist = Math.hypot(f.x - nextX, (f.y - nextY) * 1.3);
 
-          const rodHitBonus = (rod.bigFishLuck || 0) * 2.5;
-          const hitbox = f.species.size / 28 + 4.0 + (f.species.baseWeightKg > 5 ? rodHitBonus : 0);
+          const rodHitBonus = (rod.bigFishLuck || 0) * 1.6;
+          const hitbox = f.species.size / 36 + 2.2 + (f.species.baseWeightKg > 5 ? rodHitBonus : 0);
 
           if (dist <= hitbox) {
             candidates.push(f);
@@ -597,17 +600,18 @@ export const FishPond: React.FC<FishPondProps> = ({
           setFishStruggle('TIRED');
           struggleTimerRef.current = 1.6;
 
-          // Setup difficulty tier
+          // Setup difficulty tier (Hardcore Balance)
           const diff = hitFish.species.difficultyLevel;
           if (diff <= 1 || hitFish.species.baseWeightKg < 2.5) {
-            setPullTapsLeft(4); // 4 nhát giật
+            setPullTapsLeft(6); // 6 nhát giật (trước là 4)
+            setReelingTimeRemaining(2.8); // 2.8s giới hạn giật cá nhỏ!
           } else if (diff <= 3 || hitFish.species.baseWeightKg < 9) {
-            setReelProgress(25);
-            setReelingTimeRemaining(5.0);
+            setReelProgress(20);
+            setReelingTimeRemaining(3.6); // 3.6s (trước là 5.0s)
           } else {
             setTension(50);
             setSafeHoldProgress(0);
-            setReelingTimeRemaining(6.5);
+            setReelingTimeRemaining(4.8); // 4.8s (trước là 6.5s)
           }
 
           hookPosRef.current = { x: hitFish.x, y: hitFish.y };
@@ -685,7 +689,19 @@ export const FishPond: React.FC<FishPondProps> = ({
 
         const isRaging = fishStruggleRef.current === 'RAGING';
 
-        // Medium Fish: Giằng co theo nhịp cá quẫy
+        // Tier 1 Small Fish: Giới hạn thời gian giật cá
+        if (diff <= 1 || hookedFishRef.current.species.baseWeightKg < 2.5) {
+          setReelingTimeRemaining((t) => {
+            const nextT = t - decayStep;
+            if (nextT <= 0) {
+              handleFishEscape('Hết giờ! Cá nhỏ đã nhả mồi bơi mất!');
+              return 0;
+            }
+            return nextT;
+          });
+        }
+
+        // Medium Fish: Giằng co theo nhịp cá quẫy (Hardcore: quẫy -38%/s, mệt -14%/s)
         if (diff === 2 || diff === 3) {
           setReelingTimeRemaining((t) => {
             const nextT = t - decayStep;
@@ -697,13 +713,12 @@ export const FishPond: React.FC<FishPondProps> = ({
           });
 
           setReelProgress((p) => {
-            // Khi cá đang quẫy, lực kéo tụt lùi mạnh hơn (-22%/s). Khi cá mệt, lực tụt chậm (-6%/s)
-            const decayRate = isRaging ? 22 : 6;
+            const decayRate = isRaging ? 38 : 14;
             return Math.max(0, p - decayRate * decayStep);
           });
         }
 
-        // Hard / Gigantic Fish: VÙNG AN TOÀN TRÔI DẠT (MOVING GREEN ZONE)
+        // Hard / Gigantic Fish: VÙNG AN TOÀN TRÔI DẠT (MOVING GREEN ZONE - HARDCORE)
         if (diff >= 4) {
           setReelingTimeRemaining((t) => {
             const nextT = t - decayStep;
@@ -714,24 +729,24 @@ export const FishPond: React.FC<FishPondProps> = ({
             return nextT;
           });
 
-          // Vùng an toàn trôi dạt nhịp nhàng qua lại
-          const driftOffset = Math.sin(currentTime * 0.0028) * 18;
+          // Vùng an toàn trôi dạt nhanh và hẹp hơn
+          const driftOffset = Math.sin(currentTime * 0.0038) * 22;
           const greenCenter = 50 + driftOffset;
-          const halfWidth = 14 + (rod.safeZoneBonus || 0) * 0.45;
-          const greenMin = Math.max(12, Math.round(greenCenter - halfWidth));
-          const greenMax = Math.min(88, Math.round(greenCenter + halfWidth));
+          const halfWidth = 8 + (rod.safeZoneBonus || 0) * 0.28;
+          const greenMin = Math.max(10, Math.round(greenCenter - halfWidth));
+          const greenMax = Math.min(90, Math.round(greenCenter + halfWidth));
           setSafeZoneBounds({ min: greenMin, max: greenMax });
 
           // Sức căng tự tụt khi thả tay (tụt nhanh hơn khi cá quẫy)
           setTension((ten) => {
-            const naturalDecay = isRaging ? 26 : 16;
+            const naturalDecay = isRaging ? 38 : 22;
             const nextTen = ten - naturalDecay * decayStep;
 
-            if (nextTen >= 97) {
+            if (nextTen >= 91) {
               handleFishEscape('💥 ĐỨT DÂY CÂU! Bạn đã giật cần quá mạnh làm đứt dây!');
-              return 97;
+              return 91;
             }
-            if (nextTen <= 3) {
+            if (nextTen <= 9) {
               handleFishEscape('💨 SẨY CÁ! Dây câu quá chùng, cá đã nhả lưỡi câu chạy mất!');
               return 0;
             }
@@ -741,9 +756,9 @@ export const FishPond: React.FC<FishPondProps> = ({
           setTension((curTen) => {
             const isInZone = curTen >= greenMin && curTen <= greenMax;
             setSafeHoldProgress((sp) => {
-              // Ở trong vùng an toàn: nạp tiến trình thu phục (+34%/s, nhanh hơn nếu cá mệt)
-              const gainRate = isRaging ? 26 : 42;
-              const deltaHold = isInZone ? gainRate * decayStep : -18 * decayStep;
+              // Nạp tiến trình chậm hơn, tụt nhanh hơn nếu trượt khỏi vùng xanh
+              const gainRate = isRaging ? 18 : 28;
+              const deltaHold = isInZone ? gainRate * decayStep : -25 * decayStep;
               const nextHold = Math.min(100, Math.max(0, sp + deltaHold));
               if (nextHold >= 100) {
                 handleCatchSuccess();
@@ -810,11 +825,11 @@ export const FishPond: React.FC<FishPondProps> = ({
     }
     soundManager.triggerHaptic(isRaging ? 50 : 30);
 
-    // Tier 1: Easy (4 taps - nếu bấm lúc cá quẫy có thể bị giật lại 1 tap)
+    // Tier 1: Small Fish (6 taps - nếu bấm lúc cá quẫy có thể bị tuột 1 tap)
     if (diff <= 1 || hookedFish.species.baseWeightKg < 2.5) {
-      if (isRaging && Math.random() < 0.4 && pullTapsLeft < 4) {
+      if (isRaging && Math.random() < 0.45 && pullTapsLeft < 6) {
         soundManager.playFishStruggleSplash();
-        setPullTapsLeft((prev) => Math.min(4, prev + 1));
+        setPullTapsLeft((prev) => Math.min(6, prev + 1));
       } else {
         const remaining = pullTapsLeft - 1;
         setPullTapsLeft(remaining);
@@ -825,11 +840,16 @@ export const FishPond: React.FC<FishPondProps> = ({
       return;
     }
 
-    // Tier 2: Medium (Đo lực nhịp nhàng)
+    // Tier 2: Medium (Đo lực nhịp nhàng - nếu kéo lúc cá đang quẫy sẽ bị phạt giật lùi!)
     if (diff <= 3 || hookedFish.species.baseWeightKg < 9) {
-      // Khi cá đuối sức: Lực kéo tăng gấp đôi (+24% * reelingPower)
-      // Khi cá đang quẫy: Lực kéo chỉ tăng nhẹ (+8%)
-      const addedPower = (isRaging ? 8 : 24) * currentRod.reelingPower;
+      if (isRaging) {
+        soundManager.playFishStruggleSplash();
+        soundManager.triggerHaptic(50);
+        // Kéo sai nhịp lúc cá quẫy bị phạt tụt lùi tiến trình
+        setReelProgress((prev) => Math.max(0, prev - 6));
+        return;
+      }
+      const addedPower = 16 * currentRod.reelingPower;
       setReelProgress((prev) => {
         const nextP = prev + addedPower;
         if (nextP >= 100) {
@@ -841,14 +861,14 @@ export const FishPond: React.FC<FishPondProps> = ({
       return;
     }
 
-    // Tier 3: Hard (Kiểm soát sức căng trong Vùng An Toàn)
+    // Tier 3: Hard (Kiểm soát sức căng trong Vùng An Toàn - nhạy cảm với đứt dây)
     if (diff >= 4) {
       setTension((prev) => {
-        const added = (isRaging ? 18 : 11) * currentRod.reelingPower;
+        const added = (isRaging ? 22 : 12) * currentRod.reelingPower;
         const nextTen = prev + added;
-        if (nextTen >= 97) {
+        if (nextTen >= 91) {
           handleFishEscape('💥 ĐỨT DÂY CÂU! Bạn đã giật cần quá mạnh lúc cá quẫy!');
-          return 97;
+          return 91;
         }
         return nextTen;
       });
@@ -880,14 +900,14 @@ export const FishPond: React.FC<FishPondProps> = ({
   };
 
   return (
-    <div className="fish-pond-overlay font-body-md select-none flex flex-col w-full h-full bg-slate-900 text-on-surface">
-      {/* 1. RESPONSIVE MOBILE-FIRST 2-ROW HEADER */}
-      <div className="pond-header-bar flex flex-col gap-1.5 px-3 py-2 bg-surface-bright/95 backdrop-blur-md border-b border-outline-variant/30 shadow-sm z-50 shrink-0">
-        {/* Row 1: Back | Title | Coins & Basket */}
-        <div className="flex items-center justify-between gap-2 w-full">
+    <div className="w-full max-w-xl mx-auto min-h-[calc(100vh-140px)] flex flex-col justify-between font-body-md select-none bg-gradient-to-b from-[#FFF9F5] via-[#FFF2EB] to-[#FCEAE1] text-[#231918] rounded-2xl sm:rounded-[32px] shadow-sm sm:shadow-2xl border border-amber-100/60 overflow-hidden relative">
+      {/* 1. COMPACT KAWAII MOBILE HEADER BAR */}
+      <div className="flex flex-col gap-1.5 px-3 pt-2 pb-1.5 bg-white/80 backdrop-blur-md border-b border-amber-200/50 shadow-xs z-50 shrink-0">
+        {/* ROW 1: Back | Title Badge | Coins & Basket Badges */}
+        {/* <div className="flex items-center justify-between gap-1.5 w-full">
           <button
             type="button"
-            className="pond-back-btn px-2.5 py-1.5 rounded-full bg-surface-container-high text-primary font-bold text-xs border border-outline-variant/40 hover:bg-surface-container active:scale-95 flex items-center gap-1 shrink-0"
+            className="px-2.5 py-1.5 rounded-full bg-white text-[#6E4D3E] font-bold text-xs border border-amber-200/80 shadow-[0_2px_0_rgba(110,77,62,0.1)] hover:bg-[#FFF0EF] active:translate-y-0.5 active:shadow-none flex items-center gap-1 shrink-0 transition-all cursor-pointer"
             onClick={onClose}
             title="Quay lại phòng mèo"
           >
@@ -895,15 +915,16 @@ export const FishPond: React.FC<FishPondProps> = ({
             <span>Về Phòng</span>
           </button>
 
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-base shrink-0">🐠</span>
-            <h2 className="pond-title text-sm font-bold text-on-surface truncate">
-              Bể Cá Săn Mồi
-            </h2>
+          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/90 border border-amber-200/70 shadow-xs">
+            <span className="text-sm">🐟</span>
+            <span className="text-xs font-extrabold text-[#6E4D3E]">Bể Săn Mồi</span>
+            <span className="text-[10px] font-bold px-1.5 py-0.2 bg-[#FF7E67]/15 text-[#a53b29] rounded-full">
+              {swimmingFish.length} Cá
+            </span>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className="pond-coins-badge flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 font-bold text-xs shadow-xs">
+          <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200/80 text-amber-900 font-bold text-xs shadow-xs">
               <span>🪙</span>
               <span>{formatNumber(fish)}</span>
             </div>
@@ -911,7 +932,7 @@ export const FishPond: React.FC<FishPondProps> = ({
             {onOpenBasket && (
               <button
                 type="button"
-                className="pond-basket-btn px-2.5 py-1 rounded-full bg-emerald-600 text-white font-bold text-xs shadow-xs hover:bg-emerald-700 active:scale-95 transition-transform shrink-0 flex items-center gap-1"
+                className="px-2.5 py-1 rounded-full bg-emerald-600 text-white font-bold text-xs shadow-xs hover:bg-emerald-700 active:scale-95 transition-transform shrink-0 flex items-center gap-1 cursor-pointer"
                 onClick={onOpenBasket}
                 title="Mở Balo Của Boss"
               >
@@ -920,13 +941,12 @@ export const FishPond: React.FC<FishPondProps> = ({
               </button>
             )}
           </div>
-        </div>
+        </div> */}
 
-        {/* Row 2: Rod Status & Shop Button */}
-        <div className="flex items-center justify-between gap-2 bg-surface-container-lowest/90 px-3 py-1.5 rounded-2xl border border-amber-300 shadow-xs">
-          {/* Cần câu & Độ bền */}
+        {/* ROW 2: Equipment Bar (Cần câu & Nút Đổi Cần) */}
+        <div className="flex items-center justify-between gap-2 bg-white/90 px-2.5 py-1.5 rounded-2xl border border-amber-200/80 shadow-[0_2px_0_rgba(212,176,136,0.2)]">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-amber-100/90 border border-amber-300 p-0.5 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+            <div className="w-8 h-8 rounded-xl bg-amber-100/90 border border-amber-300 p-0.5 flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
               {currentRod.image ? (
                 <img
                   src={currentRod.image}
@@ -934,45 +954,67 @@ export const FishPond: React.FC<FishPondProps> = ({
                   className="w-full h-full object-contain drop-shadow-xs"
                 />
               ) : (
-                <span className="text-lg">{currentRod.icon}</span>
+                <span className="text-base">{currentRod.icon}</span>
               )}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-bold text-on-surface truncate">
-                {currentRod.name}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-[#6E4D3E] truncate">
+                  {currentRod.name}
+                </span>
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 shrink-0">
+                  {currentRod.badge}
+                </span>
+              </div>
               <span
-                className={`text-[10px] font-bold ${durability <= 3 ? 'text-red-500 font-extrabold animate-pulse' : 'text-emerald-700'
-                  }`}
+                className={`text-[10px] font-bold ${
+                  durability <= 3 ? 'text-red-500 font-extrabold animate-pulse' : 'text-emerald-700'
+                }`}
               >
                 Độ bền: {durability}/{currentRod.maxDurability} • Ra dây: {currentRod.lineSpeed}x
               </span>
             </div>
           </div>
 
-          {/* NÚT MỞ SHOP CẦN CÂU */}
-          <button
-            type="button"
-            onClick={() => setIsRodShopOpen(true)}
-            className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-xs shadow-xs hover:scale-105 active:scale-95 transition-transform flex items-center gap-1 shrink-0"
-          >
-            <span>Shop</span>
-            <span>🎣</span>
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setRodModalTab('owned');
+                setIsRodShopOpen(true);
+              }}
+              className="px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-xs shadow-xs hover:bg-amber-200 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+              title="Đổi cần câu đã sở hữu"
+            >
+              <span>🎣</span>
+              <span>Đổi Cần</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRodModalTab('shop');
+                setIsRodShopOpen(true);
+              }}
+              className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold text-xs shadow-xs hover:opacity-95 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+              title="Cửa hàng cần câu"
+            >
+              <span>Shop ✨</span>
+            </button>
+          </div>
         </div>
 
-        {/* Row 3: Thanh trượt điều chỉnh tốc độ xoay cần câu (Rotation Speed Slider) */}
+        {/* ROW 3: Rotation Speed Slider */}
         <div
-          className="flex items-center justify-between gap-2 bg-amber-50/90 px-3 py-1.5 rounded-2xl border border-amber-200 shadow-xs select-none"
+          className="flex items-center justify-between gap-1.5 bg-amber-50/90 px-2.5 py-1 rounded-xl border border-amber-200/70 shadow-xs select-none"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center gap-1.5 shrink-0 text-xs font-extrabold text-amber-900">
+          <div className="flex items-center gap-1 shrink-0 text-[11px] font-extrabold text-amber-900">
             <span>🧭</span>
             <span>Tốc độ xoay:</span>
           </div>
 
-          <div className="flex items-center gap-2 flex-1 max-w-xs mx-1">
-            <span className="text-[11px] font-bold text-amber-800 shrink-0" title="Chậm">🐢 0.3x</span>
+          <div className="flex items-center gap-2 flex-1 max-w-xs sm:max-w-sm mx-1 sm:mx-2">
+            <span className="text-[10px] font-bold text-amber-800 shrink-0" title="Chậm">🐢 0.3x</span>
             <input
               type="range"
               min="0.3"
@@ -983,22 +1025,22 @@ export const FishPond: React.FC<FishPondProps> = ({
                 e.stopPropagation();
                 setSwingSpeed(parseFloat(e.target.value));
               }}
-              className="pond-speed-slider flex-1 accent-amber-600 cursor-pointer h-2 rounded-lg"
+              className="flex-1 accent-[#FF7E67] cursor-pointer h-1.5 rounded-lg bg-amber-200/80"
               title={`Kéo để chỉnh tốc độ xoay cần: ${swingSpeed.toFixed(1)}x`}
             />
-            <span className="text-[11px] font-bold text-amber-800 shrink-0" title="Nhanh">⚡ 1.8x</span>
+            <span className="text-[10px] font-bold text-amber-800 shrink-0" title="Nhanh">⚡ 1.8x</span>
           </div>
 
-          <span className="text-xs font-black text-amber-900 bg-white px-2 py-0.5 rounded-full border border-amber-300 shadow-2xs shrink-0 min-w-[42px] text-center">
+          <span className="text-[11px] font-black text-amber-900 bg-white px-1.5 py-0.2 rounded-full border border-amber-300 shadow-2xs shrink-0 min-w-[36px] text-center">
             {swingSpeed.toFixed(1)}x
           </span>
         </div>
       </div>
 
-      {/* 2. MAIN POND WATER ARENA (CỐ ĐỊNH KHUNG HÌNH 100%, KHÔNG PHÓNG TO THU NHỎ BACKGROUND) */}
+      {/* 2. MAIN POND WATER ARENA (CỐ ĐỊNH KHUNG HÌNH BỂ KÍNH, KHÔNG PHÓNG TO THU NHỎ BACKGROUND) */}
       <div
         ref={pondRef}
-        className="pond-water-arena flex-1 relative overflow-hidden cursor-crosshair select-none bg-slate-950"
+        className="relative mx-2 sm:mx-3 rounded-2xl sm:rounded-3xl border-4 border-white/95 shadow-md overflow-hidden bg-slate-900 cursor-crosshair select-none flex-1 min-h-[420px] sm:min-h-[460px] max-h-[580px] my-1"
         onClick={handleCastLine}
       >
         {/* FIXED HARDWARE-ACCELERATED AQUARIUM BACKGROUND: Cố định tuyệt đối, đúng 1 kích thước ban đầu */}
@@ -1075,7 +1117,7 @@ export const FishPond: React.FC<FishPondProps> = ({
             <span className="reel-drop reel-drop-1">💦</span>
             <span className="reel-drop reel-drop-2">🫧</span>
             <span className="reel-drop reel-drop-3">💧</span>
-            <span className="reel-drop reel-drop-4">{fishStruggle === 'RAGING' ? '⚡' : '✨'}</span>
+            <span className="reel-drop reel-drop-4">{fishStruggle === 'RAGING' ? '⚡' : ''}</span>
 
             {/* Vòng phát sáng cảnh báo khi cá sung sức RAGING */}
             {fishStruggle === 'RAGING' && (
@@ -1255,7 +1297,7 @@ export const FishPond: React.FC<FishPondProps> = ({
                   </>
                 ) : (
                   <>
-                    <span>✨</span>
+                    <span></span>
                     <span>CÁ THẤM MỆT! KÉO DỒN LỰC (+150%)</span>
                   </>
                 )}
@@ -1359,12 +1401,12 @@ export const FishPond: React.FC<FishPondProps> = ({
         {/* CATCH CELEBRATION TOAST BANNER */}
         {catchToast && (
           <div className="pond-catch-banner">
-            <span className="banner-star">✨</span>
+            <span className="banner-star"></span>
             <div className="min-w-0">
               <h4 className="banner-head">{catchToast.text}</h4>
               <p className="banner-sub">{catchToast.sub}</p>
             </div>
-            <span className="banner-star">✨</span>
+            <span className="banner-star"></span>
           </div>
         )}
 
@@ -1378,199 +1420,400 @@ export const FishPond: React.FC<FishPondProps> = ({
       </div>
 
       {/* 4. RESPONSIVE BOTTOM ACTION BAR (CỐ ĐỊNH CHIỀU CAO KHUNG HÌNH KHÔNG CO GIÃN) */}
-      <div className="pond-bottom-bar flex flex-col sm:flex-row items-center justify-between gap-2 px-3 py-2 bg-surface-bright/95 border-t border-outline-variant/30 shrink-0 min-h-[58px] sm:min-h-[52px]">
-        <p className="pond-tip text-[11px] sm:text-xs text-on-surface-variant text-center sm:text-left font-medium leading-tight">
-          💡 <strong>Mẹo:</strong> Cần câu xịn ra dây nhanh hơn ({currentRod.lineSpeed}x) và hút cá to! Cần lắc lư nhớ hành trình, tiếp tục xoay mượt mà sau mỗi lượt câu.
-        </p>
+      <div className="flex flex-col gap-1.5 px-3 pt-1.5 pb-2 bg-white/80 backdrop-blur-md border-t border-amber-200/50 shrink-0">
+        {/* Mẹo câu cá phong cách kawaii hổ phách */}
+        <div className="px-2.5 py-1 rounded-xl bg-amber-50/90 border border-amber-200/70 text-[11px] text-[#6E4D3E] font-medium leading-tight flex items-center gap-1.5">
+          <span className="text-sm shrink-0">💡</span>
+          <p className="line-clamp-1">
+            <strong>Mẹo:</strong> Cần xịn ra dây nhanh hơn ({currentRod.lineSpeed}x) và hút cá to! Cần lắc lư nhớ hành trình, tiếp tục xoay sau mỗi lượt câu.
+          </p>
+        </div>
 
-        {/* Nút bấm luôn cố định kích thước và vị trí, không biến mất làm giật/co giãn khung hình bể cá */}
-        <button
-          type="button"
-          onClick={gamePhase === 'SWINGING' ? handleCastLine : undefined}
-          disabled={gamePhase !== 'SWINGING'}
-          className={`w-full sm:w-auto px-6 py-2.5 rounded-2xl font-extrabold text-sm shadow-md transition-all shrink-0 flex items-center justify-center gap-1.5 select-none ${gamePhase === 'SWINGING'
-              ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white hover:scale-102 active:scale-95 cursor-pointer'
-              : 'bg-surface-container-high text-on-surface-variant/70 border border-outline-variant/40 cursor-not-allowed opacity-90'
+        {/* Hàng 3 Nút Bấm Chính: [Đổi Cần 🎣] [Quăng Cần Ngay 🎯] [Kho Cá 🎒] */}
+        <div className="flex items-center gap-2">
+          {/* Nút 1: Đổi Cần (Tiện ích đổi cần nhanh) */}
+          <button
+            type="button"
+            onClick={() => {
+              setRodModalTab('owned');
+              setIsRodShopOpen(true);
+            }}
+            className="w-16 sm:w-20 h-12 rounded-2xl bg-white border-2 border-amber-300 text-amber-900 shadow-[0_3px_0_#d4b088] active:translate-y-0.5 active:shadow-none flex flex-col items-center justify-center gap-0.5 hover:bg-amber-50 active:scale-95 transition-all shrink-0 cursor-pointer"
+            title="Đổi cần câu nhanh"
+          >
+            <span className="text-base leading-none">🎣</span>
+            <span className="text-[10px] sm:text-xs font-black">Đổi Cần</span>
+          </button>
+
+          {/* Nút 2: Quăng Cần Ngay (Nút chính flex-1) */}
+          <button
+            type="button"
+            onClick={gamePhase === 'SWINGING' ? handleCastLine : undefined}
+            disabled={gamePhase !== 'SWINGING'}
+            className={`flex-1 h-12 rounded-2xl font-extrabold text-sm sm:text-base shadow-[0_4px_0_#E25D45] transition-all flex items-center justify-center gap-1.5 select-none ${
+              gamePhase === 'SWINGING'
+                ? 'bg-gradient-to-r from-[#FF7E67] via-[#FF6B6B] to-[#E25D45] text-white hover:opacity-95 active:translate-y-0.5 active:shadow-none cursor-pointer'
+                : 'bg-[#F1DEDC] text-[#8B716D] shadow-none cursor-not-allowed opacity-90'
             }`}
-        >
-          {gamePhase === 'SWINGING' && (
-            <>
-              <span>Quăng Cần Ngay</span>
-              <span>🎯</span>
-            </>
+          >
+            {gamePhase === 'SWINGING' && (
+              <>
+                <span>Quăng Cần Ngay</span>
+                <span>🎯</span>
+              </>
+            )}
+            {gamePhase === 'CASTING' && (
+              <>
+                <span>Đang Phóng Dây...</span>
+                <span>🪝</span>
+              </>
+            )}
+            {gamePhase === 'REELING' && (
+              <>
+                <span>Đang Kéo Cá!</span>
+                <span>⚡</span>
+              </>
+            )}
+            {gamePhase === 'RETRACTING' && (
+              <>
+                <span>Đang Thu Dây Về...</span>
+                <span>🔄</span>
+              </>
+            )}
+          </button>
+
+          {/* Nút 3: Kho Cá (Mở Balo của Boss) */}
+          {onOpenBasket && (
+            <button
+              type="button"
+              onClick={onOpenBasket}
+              className="w-16 sm:w-20 h-12 rounded-2xl bg-white border-2 border-emerald-300 text-emerald-800 shadow-[0_3px_0_#a0f0c7] active:translate-y-0.5 active:shadow-none flex flex-col items-center justify-center gap-0.5 hover:bg-emerald-50 active:scale-95 transition-all shrink-0 cursor-pointer"
+              title="Mở Balo Của Boss"
+            >
+              <span className="text-base leading-none">🎒</span>
+              <span className="text-[10px] sm:text-xs font-black">Kho Cá</span>
+            </button>
           )}
-          {gamePhase === 'CASTING' && (
-            <>
-              <span>Đang Phóng Dây...</span>
-              <span>🪝</span>
-            </>
-          )}
-          {gamePhase === 'REELING' && (
-            <>
-              <span>Đang Kéo Cá!</span>
-              <span>⚡</span>
-            </>
-          )}
-          {gamePhase === 'RETRACTING' && (
-            <>
-              <span>Đang Thu Dây Về...</span>
-              <span>🔄</span>
-            </>
-          )}
-        </button>
+        </div>
+
+        {/* iOS Home Indicator Bar */}
+        <div className="w-28 h-1 bg-[#6E4D3E]/15 rounded-full mx-auto mt-0.5" />
       </div>
 
-      {/* 5. CỬA HÀNG CẦN CÂU (ROD SHOP MODAL) */}
-      {isRodShopOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
-          onClick={() => setIsRodShopOpen(false)}
-        >
+      {/* 5. CỬA SỔ ĐỔI CẦN & CỬA HÀNG CẦN CÂU (ROD SWITCHER & SHOP MODAL) */}
+      {isRodShopOpen && (() => {
+        const ownedList = FISHING_RODS_CATALOG.filter(
+          (r) => (unlockedRods || ['wood_rod']).includes(r.id) || r.id === activeRodId || r.price === 0
+        );
+
+        return (
           <div
-            className="bg-surface-bright rounded-3xl border border-outline-variant/40 shadow-2xl max-w-md w-full overflow-hidden flex flex-col max-h-[85vh]"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
+            onClick={() => setIsRodShopOpen(false)}
           >
-            {/* Modal Header */}
-            <div className="p-4 bg-gradient-to-r from-amber-500 to-orange-600 text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">🎣</span>
-                <div>
-                  <h3 className="font-bold text-base leading-tight">Cửa Hàng Cần Câu</h3>
-                  <p className="text-xs opacity-90">Cần xịn phóng dây nhanh hơn & tăng tỷ lệ cá khủng</p>
+            <div
+              className="bg-surface-bright rounded-3xl border border-outline-variant/40 shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[85vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="p-3.5 bg-gradient-to-r from-amber-500 to-orange-600 text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">🎣</span>
+                  <div>
+                    <h3 className="font-bold text-base leading-tight">Đổi Cần & Cửa Hàng Cần</h3>
+                    <p className="text-xs opacity-90">Chuyển cần đã sở hữu hoặc sắm cần mới xịn xò</p>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsRodShopOpen(false)}
+                  className="w-8 h-8 rounded-full bg-white/20 text-white font-bold flex items-center justify-center hover:bg-white/30 cursor-pointer"
+                >
+                  ✕
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsRodShopOpen(false)}
-                className="w-8 h-8 rounded-full bg-white/20 text-white font-bold flex items-center justify-center hover:bg-white/30"
-              >
-                ✕
-              </button>
-            </div>
 
-            {/* Current Rod Durability Card */}
-            <div className="p-3 bg-amber-50 border-b border-amber-200 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 p-0.5 flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
-                  {currentRod.image ? (
-                    <img
-                      src={currentRod.image}
-                      alt={currentRod.name}
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <span className="text-xl">{currentRod.icon}</span>
-                  )}
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-amber-900 block">
-                    Đang trang bị: {currentRod.name}
-                  </span>
-                  <span
-                    className={`text-xs font-bold ${durability <= 3 ? 'text-red-600 font-extrabold' : 'text-emerald-700'
+              {/* Status Header: Current Rod & Coins */}
+              <div className="px-3.5 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 p-0.5 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                    {currentRod.image ? (
+                      <img
+                        src={currentRod.image}
+                        alt={currentRod.name}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-lg">{currentRod.icon}</span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-amber-900 block leading-tight">
+                      Đang dùng: <strong>{currentRod.name}</strong>
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold ${
+                        durability <= 3 ? 'text-red-600 font-extrabold animate-pulse' : 'text-emerald-700'
                       }`}
-                  >
-                    Độ bền: {durability}/{currentRod.maxDurability} lượt • Ra dây: {currentRod.lineSpeed}x
-                  </span>
+                    >
+                      Độ bền: {durability}/{currentRod.maxDurability} lượt • Ra dây: {currentRod.lineSpeed}x
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 font-bold text-amber-900 text-xs px-2.5 py-1 rounded-full bg-white border border-amber-200">
+                  <span>🪙</span>
+                  <span>{formatNumber(fish)}</span>
                 </div>
               </div>
-              <div className="flex items-center gap-1 font-bold text-amber-900 text-sm">
-                <span>🪙</span>
-                <span>{formatNumber(fish)}</span>
+
+              {/* 2 Navigation Capsule Tabs */}
+              <div className="grid grid-cols-2 p-1.5 bg-amber-100/60 border-b border-amber-200/80 gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setRodModalTab('owned')}
+                  className={`py-1.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    rodModalTab === 'owned'
+                      ? 'bg-white text-amber-900 shadow-sm border border-amber-300 font-black'
+                      : 'text-amber-800/70 hover:bg-white/50'
+                  }`}
+                >
+                  <span>🎣 Cần Đã Có</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-200/80 text-amber-900 text-[10px]">
+                    {ownedList.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRodModalTab('shop')}
+                  className={`py-1.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    rodModalTab === 'shop'
+                      ? 'bg-white text-amber-900 shadow-sm border border-amber-300 font-black'
+                      : 'text-amber-800/70 hover:bg-white/50'
+                  }`}
+                >
+                  <span>🏪 Shop Cần Mới</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-200/80 text-amber-900 text-[10px]">
+                    {FISHING_RODS_CATALOG.length}
+                  </span>
+                </button>
               </div>
-            </div>
 
-            {/* List of Rods */}
-            <div className="p-3.5 overflow-y-auto flex flex-col gap-2.5">
-              {FISHING_RODS_CATALOG.map((rod) => {
-                const isEquipped = rod.id === activeRodId;
-                const canAfford = fish >= rod.price;
+              {/* Tab 1: Cần Đã Có (Đổi Cần Nhanh & Sửa Cần) */}
+              {rodModalTab === 'owned' && (
+                <div className="p-3 overflow-y-auto flex flex-col gap-2.5">
+                  {ownedList.map((rod) => {
+                    const isEquipped = rod.id === activeRodId;
+                    const rodDura = isEquipped ? durability : rod.maxDurability;
+                    const duraPercent = Math.round((rodDura / rod.maxDurability) * 100);
+                    const repairPrice = Math.min(150, Math.floor(rod.price * 0.25));
 
-                return (
-                  <div
-                    key={rod.id}
-                    className={`p-3 rounded-2xl border-2 transition-all flex flex-col gap-2 ${isEquipped
-                        ? 'border-amber-500 bg-amber-50/60 shadow-xs'
-                        : 'border-outline-variant/40 bg-surface-container-lowest hover:border-amber-300'
-                      }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-12 h-12 rounded-xl bg-surface-container-high border border-outline-variant/50 p-1 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
-                          {rod.image ? (
-                            <img
-                              src={rod.image}
-                              alt={rod.name}
-                              className="w-full h-full object-contain drop-shadow-xs hover:scale-110 transition-transform"
-                            />
-                          ) : (
-                            <span className="text-2xl">{rod.icon}</span>
+                    return (
+                      <div
+                        key={rod.id}
+                        className={`p-3 rounded-2xl border-2 transition-all flex flex-col gap-2 ${
+                          isEquipped
+                            ? 'border-amber-500 bg-amber-50/70 shadow-xs'
+                            : 'border-outline-variant/40 bg-surface-container-lowest hover:border-amber-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-12 h-12 rounded-xl bg-amber-100/90 border border-amber-200 p-1 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                              {rod.image ? (
+                                <img
+                                  src={rod.image}
+                                  alt={rod.name}
+                                  className="w-full h-full object-contain drop-shadow-xs"
+                                />
+                              ) : (
+                                <span className="text-2xl">{rod.icon}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <h4 className="font-bold text-sm text-on-surface truncate">{rod.name}</h4>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant shrink-0">
+                                  {rod.badge}
+                                </span>
+                              </div>
+                              <span className="text-xs text-on-surface-variant font-medium block">
+                                Ra dây: <strong>{rod.lineSpeed}x</strong> • Cá to: +
+                                <strong>{Math.round((rod.bigFishLuck || 0) * 90)}%</strong>
+                              </span>
+                            </div>
+                          </div>
+
+                          {isEquipped && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold shrink-0">
+                              ✓ Đang Dùng
+                            </span>
                           )}
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <h4 className="font-bold text-sm text-on-surface truncate">{rod.name}</h4>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant shrink-0">
-                              {rod.badge}
+
+                        {/* Durability Progress Bar */}
+                        <div className="flex flex-col gap-1 p-1.5 rounded-xl bg-white/80 border border-amber-200/60">
+                          <div className="flex items-center justify-between text-[10px] font-bold">
+                            <span className={rodDura <= 3 ? 'text-red-600' : 'text-amber-800'}>
+                              Độ bền cần câu
+                            </span>
+                            <span className={rodDura <= 3 ? 'text-red-600' : 'text-emerald-700'}>
+                              {rodDura}/{rod.maxDurability} lượt ({duraPercent}%)
                             </span>
                           </div>
-                          <span className="text-xs text-on-surface-variant font-medium block">
-                            Độ bền: <strong>{rod.maxDurability} lượt</strong> • Ra dây: <strong>{rod.lineSpeed}x</strong> • Cá to: +
-                            <strong>{Math.round((rod.bigFishLuck || 0) * 90)}%</strong>
-                          </span>
+                          <div className="w-full bg-amber-100 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-300 ${
+                                rodDura <= 3 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${duraPercent}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div>
+                          {isEquipped && durability > 0 ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="w-full py-2 rounded-xl bg-emerald-100 text-emerald-800 font-bold text-xs cursor-default flex items-center justify-center gap-1"
+                            >
+                              <span>✓</span>
+                              <span>Đang trang bị cần này</span>
+                            </button>
+                          ) : isEquipped && durability <= 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => handleBuyRod(rod.id)}
+                              className="w-full py-2 rounded-xl bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold text-xs shadow-xs hover:opacity-95 active:scale-98 transition-transform cursor-pointer"
+                            >
+                              🔧 Sửa cần câu ({repairPrice > 0 ? `${formatNumber(repairPrice)} xu` : 'Miễn phí'})
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleBuyRod(rod.id)}
+                              className="w-full py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-xs shadow-xs hover:opacity-95 active:scale-98 transition-transform cursor-pointer flex items-center justify-center gap-1"
+                            >
+                              <span>✨</span>
+                              <span>Trang Bị Cần Này Ngay (Miễn phí)</span>
+                            </button>
+                          )}
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
 
-                      <div className="text-right shrink-0 ml-2">
-                        <span className="text-xs font-extrabold text-amber-700 block">
-                          {rod.price === 0 ? 'Miễn phí' : `${formatNumber(rod.price)} 🪙`}
-                        </span>
-                      </div>
-                    </div>
+              {/* Tab 2: Shop Cần Mới */}
+              {rodModalTab === 'shop' && (
+                <div className="p-3 overflow-y-auto flex flex-col gap-2.5">
+                  {FISHING_RODS_CATALOG.map((rod) => {
+                    const isEquipped = rod.id === activeRodId;
+                    const isUnlocked = (unlockedRods || ['wood_rod']).includes(rod.id);
+                    const canAfford = fish >= rod.price;
 
-                    <p className="text-xs text-on-surface-variant leading-relaxed">
-                      {rod.description}
-                    </p>
+                    return (
+                      <div
+                        key={rod.id}
+                        className={`p-3 rounded-2xl border-2 transition-all flex flex-col gap-2 ${
+                          isEquipped
+                            ? 'border-amber-500 bg-amber-50/70 shadow-xs'
+                            : 'border-outline-variant/40 bg-surface-container-lowest hover:border-amber-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-12 h-12 rounded-xl bg-surface-container-high border border-outline-variant/50 p-1 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                              {rod.image ? (
+                                <img
+                                  src={rod.image}
+                                  alt={rod.name}
+                                  className="w-full h-full object-contain drop-shadow-xs hover:scale-110 transition-transform"
+                                />
+                              ) : (
+                                <span className="text-2xl">{rod.icon}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <h4 className="font-bold text-sm text-on-surface truncate">{rod.name}</h4>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant shrink-0">
+                                  {rod.badge}
+                                </span>
+                              </div>
+                              <span className="text-xs text-on-surface-variant font-medium block">
+                                Độ bền: <strong>{rod.maxDurability} lượt</strong> • Ra dây: <strong>{rod.lineSpeed}x</strong> • Cá to: +
+                                <strong>{Math.round((rod.bigFishLuck || 0) * 90)}%</strong>
+                              </span>
+                            </div>
+                          </div>
 
-                    <div>
-                      {isEquipped && durability > 0 ? (
-                        <button
-                          type="button"
-                          disabled
-                          className="w-full py-2 rounded-xl bg-emerald-100 text-emerald-800 font-bold text-xs cursor-default flex items-center justify-center gap-1"
-                        >
-                          <span>✓</span>
-                          <span>Đang sử dụng ({durability}/{rod.maxDurability} lượt)</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleBuyRod(rod.id)}
-                          disabled={!canAfford && rod.price > 0}
-                          className={`w-full py-2 rounded-xl font-bold text-xs shadow-xs transition-transform active:scale-98 ${rod.price === 0
-                              ? 'bg-amber-600 text-white hover:bg-amber-700'
-                              : canAfford
-                                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:opacity-95'
-                                : 'bg-surface-container-highest text-on-surface-variant opacity-60 cursor-not-allowed'
-                            }`}
-                        >
-                          {rod.price === 0
-                            ? 'Trang bị miễn phí'
-                            : isEquipped && durability <= 0
-                              ? `Sửa cần câu (${formatNumber(rod.price)} xu)`
-                              : canAfford
-                                ? `Mua & Trang bị (${formatNumber(rod.price)} xu)`
+                          <div className="text-right shrink-0 ml-2">
+                            <span className="text-xs font-extrabold text-amber-700 block">
+                              {rod.price === 0 ? 'Miễn phí' : `${formatNumber(rod.price)} 🪙`}
+                            </span>
+                            {isUnlocked && (
+                              <span className="text-[10px] font-bold text-emerald-700 block">
+                                Đã sở hữu
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-on-surface-variant leading-relaxed">
+                          {rod.description}
+                        </p>
+
+                        <div>
+                          {isEquipped && durability > 0 ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="w-full py-2 rounded-xl bg-emerald-100 text-emerald-800 font-bold text-xs cursor-default flex items-center justify-center gap-1"
+                            >
+                              <span>✓</span>
+                              <span>Đang sử dụng ({durability}/{rod.maxDurability} lượt)</span>
+                            </button>
+                          ) : isUnlocked ? (
+                            <button
+                              type="button"
+                              onClick={() => handleBuyRod(rod.id)}
+                              className="w-full py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs shadow-xs hover:bg-emerald-700 active:scale-98 transition-transform cursor-pointer"
+                            >
+                              Đổi Sang Cần Này Ngay (Đã sở hữu)
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleBuyRod(rod.id)}
+                              disabled={!canAfford && rod.price > 0}
+                              className={`w-full py-2 rounded-xl font-bold text-xs shadow-xs transition-transform active:scale-98 cursor-pointer ${
+                                rod.price === 0
+                                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                                  : canAfford
+                                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:opacity-95'
+                                  : 'bg-surface-container-highest text-on-surface-variant opacity-60 cursor-not-allowed'
+                              }`}
+                            >
+                              {rod.price === 0
+                                ? 'Trang bị miễn phí'
+                                : canAfford
+                                ? `Mua & Trang Bị (${formatNumber(rod.price)} xu)`
                                 : `Chưa đủ xu (${formatNumber(rod.price)} xu)`}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

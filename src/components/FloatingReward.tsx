@@ -130,7 +130,7 @@ export const FloatingReward: React.FC<FloatingRewardProps> = ({
               className="golden-fish-swimmer-img"
               draggable={false}
             />
-            <span className="golden-fish-hint">CHẠM VÀO TÔI! ✨</span>
+            <span className="golden-fish-hint">CHẠM VÀO TÔI! </span>
           </div>
         </div>
       )}
@@ -139,12 +139,12 @@ export const FloatingReward: React.FC<FloatingRewardProps> = ({
       {goldenToast.show && (
         <div className="golden-toast-banner">
           <div className="golden-toast-content">
-            <span className="toast-sparkle">✨</span>
+            <span className="toast-sparkle"></span>
             <div className="min-w-0 text-center sm:text-left">
               <h4 className="toast-title truncate sm:text-clip">BẮT ĐƯỢC CÁ VÀNG MAY MẮN!</h4>
               <p className="toast-amount">+{formatNumber(goldenToast.amount)} Cá 🐟 • KÍCH HOẠT FRENZY!</p>
             </div>
-            <span className="toast-sparkle">✨</span>
+            <span className="toast-sparkle"></span>
           </div>
         </div>
       )}

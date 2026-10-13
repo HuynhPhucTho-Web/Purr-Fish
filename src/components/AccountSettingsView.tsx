@@ -235,7 +235,7 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
                       onOpenAuthModal();
                     }}
                   >
-                    ✨ Đăng Ký Tài Khoản Chính Thức
+                     Đăng Ký Tài Khoản Chính Thức
                   </button>
                 )}
                 <button
@@ -280,7 +280,7 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
                   className={`auth-mode-btn ${authMode === 'simple_register' ? 'mode-active' : ''}`}
                   onClick={() => setAuthMode('simple_register')}
                 >
-                  ✨ Tạo Tài Khoản Đơn Giản
+                   Tạo Tài Khoản Đơn Giản
                 </button>
                 <button
                   type="button"
@@ -464,7 +464,7 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
             <h4 className="group-title">🔊 Âm Thanh & Cảm Giác</h4>
 
             <div className="setting-toggle-row">
-              <span className="setting-label">Hiệu ứng âm thanh (SFX)</span>
+              <span className="setting-label">Âm thanh (SFX)</span>
               <button
                 type="button"
                 className={`toggle-switch-btn ${settings.soundEnabled ? 'toggle-on' : 'toggle-off'}`}
@@ -474,8 +474,49 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
               </button>
             </div>
 
+            {settings.soundEnabled && (
+              <div className="setting-volume-row">
+                <span className="volume-label">Âm lượng SFX:</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={settings.sfxVolume ?? 80}
+                  onChange={(e) => onUpdateSettings({ sfxVolume: Number(e.target.value) })}
+                  className="volume-slider"
+                />
+                <span className="volume-value">{settings.sfxVolume ?? 80}%</span>
+              </div>
+            )}
+
             <div className="setting-toggle-row">
-              <span className="setting-label">Rung phản hồi (Haptics)</span>
+              <span className="setting-label">Nhạc nền (BGM)</span>
+              <button
+                type="button"
+                className={`toggle-switch-btn ${(settings.musicEnabled ?? true) ? 'toggle-on' : 'toggle-off'}`}
+                onClick={() => onUpdateSettings({ musicEnabled: !(settings.musicEnabled ?? true) })}
+              >
+                {(settings.musicEnabled ?? true) ? 'BẬT 🎵' : 'TẮT 🔇'}
+              </button>
+            </div>
+
+            {(settings.musicEnabled ?? true) && (
+              <div className="setting-volume-row">
+                <span className="volume-label">Âm lượng BGM:</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={settings.musicVolume ?? 50}
+                  onChange={(e) => onUpdateSettings({ musicVolume: Number(e.target.value) })}
+                  className="volume-slider"
+                />
+                <span className="volume-value">{settings.musicVolume ?? 50}%</span>
+              </div>
+            )}
+
+            <div className="setting-toggle-row">
+              <span className="setting-label">Rung (Haptics)</span>
               <button
                 type="button"
                 className={`toggle-switch-btn ${settings.hapticsEnabled ? 'toggle-on' : 'toggle-off'}`}
@@ -486,7 +527,7 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
             </div>
 
             <div className="setting-toggle-row">
-              <span className="setting-label">Hiệu ứng hạt lấp lánh (Particles)</span>
+              <span className="setting-label">Hiệu ứng hạt</span>
               <button
                 type="button"
                 className={`toggle-switch-btn ${settings.particlesEnabled ? 'toggle-on' : 'toggle-off'}`}
@@ -499,7 +540,7 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
 
           {/* Backup & Save Management */}
           <div className="settings-group-card">
-            <h4 className="group-title">💾 Sao Lưu & Khôi Phục Dữ Liệu</h4>
+            <h4 className="group-title">💾 Dữ Liệu & Sao Lưu</h4>
 
             <div className="save-action-row">
               <button
@@ -507,7 +548,7 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
                 className="action-btn export-code-btn"
                 onClick={handleGenerateExportCode}
               >
-                📋 Sao Chép Mã Sao Lưu (Export)
+                📋 Xuất Mã
               </button>
               <button
                 type="button"
@@ -517,24 +558,24 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
                   showToast('success', 'Đã lưu trò chơi vào máy!');
                 }}
               >
-                💾 Lưu Vào Máy Ngay {saveStatus ? `(${saveStatus})` : ''}
+                💾 Lưu Máy {saveStatus ? `(${saveStatus})` : ''}
               </button>
             </div>
 
             {exportCode && (
               <div className="code-display-box">
-                <span className="code-label">Mã sao lưu của bạn:</span>
+                <span className="code-label">Mã sao lưu:</span>
                 <textarea className="code-textarea" readOnly value={exportCode} rows={2} />
               </div>
             )}
 
             <div className="import-box-wrap">
-              <label className="import-label">Khôi phục tiến trình từ mã sao lưu (Import):</label>
+              <label className="import-label">Khôi phục từ mã sao lưu:</label>
               <div className="import-input-row">
                 <input
                   type="text"
                   className="import-input"
-                  placeholder="Dán mã sao lưu vào đây..."
+                  placeholder="Dán mã sao lưu..."
                   value={importCodeInput}
                   onChange={(e) => setImportCodeInput(e.target.value)}
                 />
@@ -544,7 +585,7 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
                   onClick={handleApplyImport}
                   disabled={!importCodeInput.trim()}
                 >
-                  Khôi phục
+                  Nhập
                 </button>
               </div>
             </div>

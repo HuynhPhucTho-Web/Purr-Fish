@@ -47,6 +47,8 @@ export interface GameSaveData {
     particlesEnabled: boolean;
     hapticsEnabled: boolean;
     visualTheme: 'cute_cartoon' | 'sticker_art';
+    sfxVolume?: number; // 0 - 100
+    musicVolume?: number; // 0 - 100
   };
   achievements: string[];
   lastSaved: number;
@@ -103,6 +105,8 @@ export const DEFAULT_SAVE_DATA: GameSaveData = {
     particlesEnabled: true,
     hapticsEnabled: true,
     visualTheme: 'cute_cartoon',
+    sfxVolume: 80,
+    musicVolume: 50,
   },
   achievements: [],
   lastSaved: Date.now(),
@@ -190,13 +194,14 @@ export function calculateOfflineProgress(
   const elapsedMs = now - lastSavedTimestamp;
   const elapsedSeconds = Math.floor(elapsedMs / 1000);
 
-  // Require at least 30 seconds away to trigger welcome reward
-  if (elapsedSeconds < 30) {
+  // Cần ít nhất 60 giây rời game để nhận quà offline
+  if (elapsedSeconds < 60) {
     return { offlineSeconds: 0, offlineFish: 0 };
   }
 
-  const cappedSeconds = Math.min(elapsedSeconds, 8 * 3600); // 8 hours max
-  const offlineFish = Math.floor(cappedSeconds * autoFishPerSecond * 0.5);
+  // Giới hạn tối đa 3 giờ offline, hiệu suất 20% để chống lạm phát
+  const cappedSeconds = Math.min(elapsedSeconds, 3 * 3600);
+  const offlineFish = Math.floor(cappedSeconds * autoFishPerSecond * 0.2);
 
   return {
     offlineSeconds: cappedSeconds,

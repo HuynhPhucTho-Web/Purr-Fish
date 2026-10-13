@@ -22,7 +22,7 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
     minLevel: 1,
     maxLevel: 9,
     minXp: 0,
-    maxXp: 4196,
+    maxXp: 27124,
     color: '#9CA3AF',
     gradient: 'linear-gradient(135deg, #9CA3AF, #6B7280)',
     borderGlow: 'rgba(156, 163, 175, 0.4)',
@@ -34,8 +34,8 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
     badge: '🥉',
     minLevel: 10,
     maxLevel: 24,
-    minXp: 4197,
-    maxXp: 24941,
+    minXp: 27125,
+    maxXp: 362927,
     color: '#CD7F32',
     gradient: 'linear-gradient(135deg, #D97706, #92400E)',
     borderGlow: 'rgba(217, 119, 6, 0.45)',
@@ -47,8 +47,8 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
     badge: '🥈',
     minLevel: 25,
     maxLevel: 49,
-    minXp: 24942,
-    maxXp: 103449,
+    minXp: 362928,
+    maxXp: 2569118,
     color: '#C0C0C0',
     gradient: 'linear-gradient(135deg, #E2E8F0, #94A3B8)',
     borderGlow: 'rgba(148, 163, 184, 0.5)',
@@ -60,8 +60,8 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
     badge: '🥇',
     minLevel: 50,
     maxLevel: 74,
-    minXp: 103450,
-    maxXp: 238499,
+    minXp: 2569119,
+    maxXp: 8060202,
     color: '#FFD700',
     gradient: 'linear-gradient(135deg, #FBBF24, #D97706)',
     borderGlow: 'rgba(251, 191, 36, 0.55)',
@@ -73,8 +73,8 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
     badge: '💎',
     minLevel: 75,
     maxLevel: 99,
-    minXp: 238500,
-    maxXp: 434199,
+    minXp: 8060203,
+    maxXp: 18156339,
     color: '#00E5FF',
     gradient: 'linear-gradient(135deg, #38BDF8, #0284C7)',
     borderGlow: 'rgba(56, 189, 248, 0.65)',
@@ -86,7 +86,7 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
     badge: '🔥',
     minLevel: 100,
     maxLevel: 999,
-    minXp: 434200,
+    minXp: 18156340,
     maxXp: 999999999,
     color: '#FF1744',
     gradient: 'linear-gradient(135deg, #EF4444, #7C3AED)',
@@ -108,16 +108,14 @@ export function getRankTierByLevel(level: number): RankTier {
 }
 
 /**
- * Tính điểm kinh nghiệm (XP) cần thiết để lên cấp tiếp theo.
- * Mốc đầu tiên Lv1 yêu cầu đúng 200 XP.
- * Càng lên level cao thì điểm kinh nghiệm yêu cầu càng tăng liên tục.
+ * Tính điểm kinh nghiệm (XP) cần thiết để lên cấp tiếp theo (Hardcore Exponential Progression).
+ * Cấp độ đầu tiên Lv1 yêu cầu 500 XP. Càng lên cao yêu cầu điểm kinh nghiệm tăng vọt.
  */
 export function getXpRequiredForLevel(level: number): number {
-  if (level <= 1) return 200;
-  // Càng lên cấp cao, lượng XP yêu cầu để thăng cấp càng tăng dần:
-  // Công thức: 200 + (level - 1) * 50 + floor((level - 1)^1.3 * 10)
-  const base = 200;
-  const growth = (level - 1) * 50 + Math.floor(Math.pow(level - 1, 1.3) * 10);
+  if (level <= 1) return 500;
+  // Đường cong tăng trưởng kinh nghiệm luỹ thừa bậc cao chống lạm phát cấp độ
+  const base = 500;
+  const growth = Math.floor(180 * Math.pow(level - 1, 1.55) + 30 * Math.pow(level - 1, 2));
   return base + growth;
 }
 

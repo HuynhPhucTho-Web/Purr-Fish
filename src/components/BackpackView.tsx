@@ -44,7 +44,7 @@ export interface BackpackViewProps {
   catStage: CatGrowthStage;
   onSellFish: (instanceId: string) => number;
   onSellAllFish: () => { count: number; totalEarned: number };
-  onEquipSkin?: (skinId: string) => boolean;
+  onEquipSkin?: (skinId: string) => boolean | void;
   onUnlockSkin?: (skinId: string) => boolean;
   onBuyOrEquipRod?: (rodId: string) => { success: boolean; message: string };
   onEquipFashionItem?: (item: FashionDecorItem) => boolean;
@@ -218,7 +218,7 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
       const ok = onEquipSkin(skin.id);
       if (ok) {
         soundManager.playUpgrade();
-        showToast(`Đã diện bộ skin: ${skin.name}! ✨`);
+        showToast(`Đã diện bộ skin: ${skin.name}! `);
       }
     }
   };
@@ -695,6 +695,11 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
                   {curBowlObj.icon} {curBowlObj.name}
                 </span>
               )}
+              {curBallObj && (
+                <span className="px-2 py-0.5 rounded-full bg-surface-container-lowest text-xs font-bold text-emerald-800">
+                  {curBallObj.icon} {curBallObj.name}
+                </span>
+              )}
             </div>
 
             {/* Banner: Open Fashion Shop to buy more */}
@@ -901,8 +906,17 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
                       {isEquipped ? 'Đang Đặt' : 'Sảnh'}
                     </span>
 
-                    <div className="w-16 h-16 rounded-2xl bg-purple-50 flex items-center justify-center my-2 text-3xl">
-                      {item.icon}
+                    <div className="w-16 h-16 rounded-2xl bg-purple-50 flex items-center justify-center my-2 text-3xl overflow-hidden border border-purple-100">
+                      {item.image ? (
+                        <img
+                          src={item.image}
+                          alt={item.name}
+                          className="w-full h-full object-contain p-1"
+                          loading="lazy"
+                        />
+                      ) : (
+                        item.icon
+                      )}
                     </div>
 
                     <span className="font-label-md text-label-md text-on-surface mb-1 font-bold line-clamp-1">{item.name}</span>

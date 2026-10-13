@@ -272,7 +272,7 @@ const PRESET_SKIN_METAS = [
   {
     name: 'Mèo Mun Thần Tài',
     subtitle: 'Huyền bí bóng đêm',
-    icon: '✨',
+    icon: '',
     desc: 'Thợ săn huyền bí trong màn đêm tĩnh mịch, bắt trọn từng chú cá vàng.',
     perk: '+80% Sản lượng Click & Frenzy',
     clickMult: 1.8,

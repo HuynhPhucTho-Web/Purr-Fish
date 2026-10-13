@@ -1,7 +1,7 @@
 import React from 'react';
 import { soundManager } from '../utils/sound';
 
-export type AppPage = 'cat' | 'pond' | 'basket' | 'food' | 'shop' | 'leaderboard' | 'account';
+export type AppPage = 'cat' | 'pond' | 'basket' | 'food' | 'shop' | 'leaderboard' | 'account' | 'fashion';
 
 interface BottomNavBarProps {
   activePage: AppPage;
@@ -69,7 +69,8 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
         {navItems.map((item) => {
           const isActive =
             activePage === item.id ||
-            (item.id === 'pond' && activePage === 'basket');
+            (item.id === 'pond' && activePage === 'basket') ||
+            (item.id === 'cat' && activePage === 'fashion');
 
           return (
             <button

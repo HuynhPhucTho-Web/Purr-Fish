@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import type { CatSkin } from '../data/skins';
 import type { FishSpecies } from '../data/fishes';
 import type { RankTier, CatGrowthStage } from '../data/rankTiers';
 import { FOOD_SHOP_CATALOG, type FoodItem } from '../data/foodShop';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
-import { FashionShopModal } from './FashionShopModal';
 import { FreeWaterGiftButton } from './FreeWaterGiftButton';
 import { type FashionDecorItem, getFashionItemById } from '../data/fashionAndDecor';
 
@@ -45,6 +44,7 @@ interface CatCharacterProps {
   catStage: CatGrowthStage;
   onOpenPond: () => void;
   onOpenFoodShop: () => void;
+  onOpenFashionShop: () => void;
   onOpenBasket: () => void;
   onFeedFromInventory?: (
     foodItem: FoodItem,
@@ -70,6 +70,30 @@ interface LocalPopupItem {
   isCrit: boolean;
 }
 
+interface DecorPosition {
+  x: number; // percentage (0 - 100)
+  y: number; // percentage (0 - 100)
+}
+
+const DEFAULT_BALL_POS: DecorPosition = { x: 12, y: 78 };
+const DEFAULT_BOWL_POS: DecorPosition = { x: 86, y: 78 };
+
+const loadSavedDecorPos = (key: string, defaultPos: DecorPosition): DecorPosition => {
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+        return {
+          x: Math.max(6, Math.min(94, parsed.x)),
+          y: Math.max(10, Math.min(92, parsed.y)),
+        };
+      }
+    }
+  } catch {}
+  return defaultPos;
+};
+
 export const CatCharacter: React.FC<CatCharacterProps> = ({
   currentSkin,
   isCatActive,
@@ -80,32 +104,24 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
   isFrenzy,
   food,
   water,
-  basketCount,
-  coins = 0,
   foodInventory = {},
-  ownedHats = [],
   equippedHat = '',
-  ownedClothes = [],
   equippedClothes = '',
-  ownedRoomDecor = ['bowl_clay', 'ball_yarn_red', 'rug_peach'],
   equippedDecor = { bowl: 'bowl_clay', ball: 'ball_yarn_red', rug: 'rug_peach' },
   lastWaterGiftClaimedAt = 0,
   levelInfo,
   catStage,
-  onOpenPond,
   onOpenFoodShop,
+  onOpenFashionShop,
   onOpenBasket,
   onFeedFromInventory,
   onGiveWater,
   onClaimFreeWater,
-  onBuyFashionItem,
-  onEquipFashionItem,
   onCatClick,
 }) => {
   const [isPressed, setIsPressed] = useState(false);
   const [catSquishAnim, setCatSquishAnim] = useState(false);
   const [isFeedModalOpen, setIsFeedModalOpen] = useState(false);
-  const [isFashionShopOpen, setIsFashionShopOpen] = useState(false);
   const [ballBounceAnim, setBallBounceAnim] = useState(false);
   const [bowlClickAnim, setBowlClickAnim] = useState(false);
   const [selectedFoodId, setSelectedFoodId] = useState<string>(FOOD_SHOP_CATALOG[0]?.id || '01_thuc_an_kho');
@@ -113,27 +129,132 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
   const [feedToast, setFeedToast] = useState<string | null>(null);
   const [localPopups, setLocalPopups] = useState<LocalPopupItem[]>([]);
 
+  // Tọa độ vị trí kéo thả của Bát Ăn & Quả Banh trong phòng
+  const playStageRef = useRef<HTMLDivElement | null>(null);
+  const [ballPos, setBallPos] = useState<DecorPosition>(() =>
+    loadSavedDecorPos('purr_ball_pos', DEFAULT_BALL_POS)
+  );
+  const [bowlPos, setBowlPos] = useState<DecorPosition>(() =>
+    loadSavedDecorPos('purr_bowl_pos', DEFAULT_BOWL_POS)
+  );
+  const [draggingItem, setDraggingItem] = useState<'ball' | 'bowl' | null>(null);
+
+  const dragStartRef = useRef<{
+    item: 'ball' | 'bowl';
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    hasMoved: boolean;
+  } | null>(null);
+
   const catContainerRef = useRef<HTMLDivElement | null>(null);
 
   const curHat = getFashionItemById(equippedHat);
   const curClothes = getFashionItemById(equippedClothes);
   const curBowl = getFashionItemById(equippedDecor?.bowl || 'bowl_clay');
   const curBall = getFashionItemById(equippedDecor?.ball || 'ball_yarn_red');
+  const curRug = getFashionItemById(equippedDecor?.rug || 'rug_peach');
 
-  const handleBallClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleBallClick = (e?: React.MouseEvent | React.PointerEvent) => {
+    if (e) e.stopPropagation();
     soundManager.playPop();
     setBallBounceAnim(true);
     setTimeout(() => setBallBounceAnim(false), 450);
-    onCatClick(e.clientX, e.clientY);
+    const cx = e ? e.clientX : window.innerWidth / 2;
+    const cy = e ? e.clientY : window.innerHeight / 2;
+    onCatClick(cx, cy);
   };
 
-  const handleBowlClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleBowlClick = (e?: React.MouseEvent | React.PointerEvent) => {
+    if (e) e.stopPropagation();
     soundManager.playEat();
     setBowlClickAnim(true);
     setTimeout(() => setBowlClickAnim(false), 300);
     setIsFeedModalOpen(true);
+  };
+
+  // Xử lý giữ và kéo (Drag & Drop) đồ vật trong phòng
+  const handleItemPointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    item: 'ball' | 'bowl'
+  ) => {
+    e.stopPropagation();
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+
+    const curPos = item === 'ball' ? ballPos : bowlPos;
+    dragStartRef.current = {
+      item,
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: curPos.x,
+      currentY: curPos.y,
+      hasMoved: false,
+    };
+    setDraggingItem(item);
+  };
+
+  const handleItemPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStartRef.current || !playStageRef.current) return;
+    const { item, startX, startY } = dragStartRef.current;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    if (!dragStartRef.current.hasMoved && Math.hypot(dx, dy) > 5) {
+      dragStartRef.current.hasMoved = true;
+    }
+
+    if (dragStartRef.current.hasMoved) {
+      const rect = playStageRef.current.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        const nextX = Math.max(6, Math.min(94, ((e.clientX - rect.left) / rect.width) * 100));
+        const nextY = Math.max(10, Math.min(92, ((e.clientY - rect.top) / rect.height) * 100));
+
+        dragStartRef.current.currentX = nextX;
+        dragStartRef.current.currentY = nextY;
+
+        if (item === 'ball') {
+          setBallPos({ x: nextX, y: nextY });
+        } else {
+          setBowlPos({ x: nextX, y: nextY });
+        }
+      }
+    }
+  };
+
+  const handleItemPointerUp = (
+    e: React.PointerEvent<HTMLDivElement>,
+    item: 'ball' | 'bowl'
+  ) => {
+    e.stopPropagation();
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+
+    const wasDragging = dragStartRef.current?.hasMoved;
+    const finalPos = dragStartRef.current
+      ? { x: dragStartRef.current.currentX, y: dragStartRef.current.currentY }
+      : null;
+
+    dragStartRef.current = null;
+    setDraggingItem(null);
+
+    if (wasDragging && finalPos) {
+      soundManager.playPop(1.15);
+      if (item === 'ball') {
+        localStorage.setItem('purr_ball_pos', JSON.stringify(finalPos));
+      } else {
+        localStorage.setItem('purr_bowl_pos', JSON.stringify(finalPos));
+      }
+    } else {
+      if (item === 'ball') {
+        handleBallClick(e);
+      } else {
+        handleBowlClick(e);
+      }
+    }
   };
 
   // Trigger cuddle popups on pet
@@ -154,7 +275,7 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
       id: `pop_${Date.now()}_${Math.random()}`,
       xPercent: 35 + Math.random() * 30,
       yPercent: 35 + Math.random() * 25,
-      text: isCrit ? `CRIT! +${earned} 🪙✨` : `+${earned} 🪙`,
+      text: isCrit ? `CRIT! +${earned} 🪙` : `+${earned} 🪙`,
       isCrit,
     };
 
@@ -280,60 +401,103 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
         </div>
 
         {/* Center Play Stage & Interactive Cat */}
-        <div className="relative w-full aspect-[4/3] max-h-72 flex items-center justify-center my-space-xs">
-          {/* Rug based on equippedDecor.rug */}
-          {equippedDecor?.rug === 'rug_cloud' ? (
-            <div className="absolute w-60 h-52 rounded-[2.5rem] bg-sky-200/50 shadow-inner flex items-center justify-center pointer-events-none border border-sky-300/40">
-              <div className="w-52 h-44 rounded-[2rem] bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
-                <div className="w-44 h-36 rounded-[1.5rem] bg-sky-100/60" />
-              </div>
-            </div>
-          ) : equippedDecor?.rug === 'rug_paw' ? (
-            <div className="absolute w-56 h-56 rounded-full bg-rose-200/50 shadow-inner flex items-center justify-center pointer-events-none border border-rose-300/40">
-              <div className="w-48 h-48 rounded-full bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
-                <div className="w-40 h-40 rounded-full bg-rose-100/60 flex items-center justify-center">
-                  <span className="text-4xl opacity-30">🐾</span>
+        <div ref={playStageRef} className="relative w-full aspect-[4/3] max-h-72 flex items-center justify-center my-space-xs touch-none select-none">
+          {/* Rug based on equippedDecor.rug (Nằm ngay bên dưới nhân vật Cat) */}
+          <div className="absolute z-0 w-64 h-64 sm:w-72 sm:h-72 max-w-[94%] max-h-[94%] flex items-center justify-center pointer-events-none select-none transition-all duration-300 translate-y-16 sm:translate-y-17">
+            {curRug?.image ? (
+              <img
+                src={curRug.image}
+                alt={curRug.name}
+                className="w-full h-full object-contain filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.12)] pointer-events-none select-none transition-transform duration-300"
+                draggable={false}
+              />
+            ) : equippedDecor?.rug === 'rug_cloud' ? (
+              <div className="w-60 h-52 rounded-[2.5rem] bg-sky-200/50 shadow-inner flex items-center justify-center pointer-events-none border border-sky-300/40">
+                <div className="w-52 h-44 rounded-[2rem] bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
+                  <div className="w-44 h-36 rounded-[1.5rem] bg-sky-100/60" />
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="absolute w-56 h-56 rounded-full bg-primary-fixed/40 shadow-inner flex items-center justify-center pointer-events-none">
-              <div className="w-48 h-48 rounded-full bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
-                <div className="w-40 h-40 rounded-full bg-surface-container-low/70" />
+            ) : equippedDecor?.rug === 'rug_paw' ? (
+              <div className="w-56 h-56 rounded-full bg-rose-200/50 shadow-inner flex items-center justify-center pointer-events-none border border-rose-300/40">
+                <div className="w-48 h-48 rounded-full bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
+                  <div className="w-40 h-40 rounded-full bg-rose-100/60 flex items-center justify-center">
+                    <span className="text-4xl opacity-30">🐾</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* QUẢ BANH / ĐỒ CHƠI TRANG TRÍ SẢNH PHÒNG */}
-          <div
-            className={`absolute left-3 bottom-3 z-20 flex flex-col items-center cursor-pointer select-none group transition-transform duration-200 ${
-              ballBounceAnim ? '-translate-y-5 rotate-12 scale-125' : 'hover:scale-110 active:scale-95'
-            }`}
-            onClick={handleBallClick}
-            title={`${curBall?.name || 'Đồ chơi'} (Nhấp để nảy tưng bừng!)`}
-          >
-            <div className="w-12 h-12 rounded-2xl bg-surface-container-lowest/95 backdrop-blur-xs border border-outline-variant/40 shadow-sm flex items-center justify-center text-2xl group-hover:border-primary transition-colors">
-              {curBall?.icon || '🧶'}
-            </div>
-            <span className="text-[10px] font-bold text-on-surface-variant bg-surface-container-lowest/90 px-1.5 py-0.2 rounded-full shadow-2xs mt-0.5 truncate max-w-[70px]">
-              {curBall?.name || 'Cuộn len'}
-            </span>
+            ) : (
+              <div className="w-56 h-56 rounded-full bg-primary-fixed/40 shadow-inner flex items-center justify-center pointer-events-none">
+                <div className="w-48 h-48 rounded-full bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
+                  <div className="w-40 h-40 rounded-full bg-surface-container-low/70" />
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* MÁNG ĂN TRANG TRÍ SẢNH PHÒNG */}
+          {/* QUẢ BANH / ĐỒ CHƠI TRANG TRÍ SẢNH PHÒNG (KHÔNG NỀN TRẮNG/KHUNG, TỰ DO KÉO THẢ) */}
           <div
-            className={`absolute right-3 bottom-3 z-20 flex flex-col items-center cursor-pointer select-none group transition-transform duration-200 ${
-              bowlClickAnim ? 'scale-110 -rotate-6' : 'hover:scale-110 active:scale-95'
+            style={{
+              left: `${ballPos.x}%`,
+              top: `${ballPos.y}%`,
+            }}
+            className={`absolute -translate-x-1/2 -translate-y-1/2 z-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none transition-transform duration-75 ${
+              draggingItem === 'ball'
+                ? 'scale-125 z-30 drop-shadow-2xl opacity-90'
+                : ballBounceAnim
+                ? '-translate-y-8 rotate-12 scale-125'
+                : 'hover:scale-110 active:scale-95'
             }`}
-            onClick={handleBowlClick}
-            title={`${curBowl?.name || 'Máng ăn'} (Nhấp vào máng ăn của Boss)`}
+            onPointerDown={(e) => handleItemPointerDown(e, 'ball')}
+            onPointerMove={handleItemPointerMove}
+            onPointerUp={(e) => handleItemPointerUp(e, 'ball')}
+            onPointerCancel={(e) => handleItemPointerUp(e, 'ball')}
+            title={`${curBall?.name || 'Đồ chơi'} (Chạm để chơi / Giữ để di chuyển)`}
           >
-            <div className="w-12 h-12 rounded-2xl bg-surface-container-lowest/95 backdrop-blur-xs border border-outline-variant/40 shadow-sm flex items-center justify-center text-2xl group-hover:border-secondary transition-colors">
-              {curBowl?.icon || '🥣'}
-            </div>
-            <span className="text-[10px] font-bold text-on-surface-variant bg-surface-container-lowest/90 px-1.5 py-0.2 rounded-full shadow-2xs mt-0.5 truncate max-w-[70px]">
-              {curBowl?.name || 'Máng ăn'}
-            </span>
+            {curBall?.image ? (
+              <img
+                src={curBall.image}
+                alt={curBall.name}
+                className="w-14 h-14 sm:w-16 sm:h-16 object-contain filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.22)] select-none pointer-events-none"
+                draggable={false}
+              />
+            ) : (
+              <span className="text-4xl filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.2)] select-none pointer-events-none">
+                {curBall?.icon || '🧶'}
+              </span>
+            )}
+          </div>
+
+          {/* MÁNG ĂN TRANG TRÍ SẢNH PHÒNG (KHÔNG NỀN TRẮNG/KHUNG, TỰ DO KÉO THẢ) */}
+          <div
+            style={{
+              left: `${bowlPos.x}%`,
+              top: `${bowlPos.y}%`,
+            }}
+            className={`absolute -translate-x-1/2 -translate-y-1/2 z-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none transition-transform duration-75 ${
+              draggingItem === 'bowl'
+                ? 'scale-125 z-30 drop-shadow-2xl opacity-90'
+                : bowlClickAnim
+                ? 'scale-110 -rotate-12'
+                : 'hover:scale-110 active:scale-95'
+            }`}
+            onPointerDown={(e) => handleItemPointerDown(e, 'bowl')}
+            onPointerMove={handleItemPointerMove}
+            onPointerUp={(e) => handleItemPointerUp(e, 'bowl')}
+            onPointerCancel={(e) => handleItemPointerUp(e, 'bowl')}
+            title={`${curBowl?.name || 'Máng ăn'} (Chạm để cho ăn / Giữ để di chuyển)`}
+          >
+            {curBowl?.image ? (
+              <img
+                src={curBowl.image}
+                alt={curBowl.name}
+                className="w-16 h-16 sm:w-20 sm:h-20 object-contain filter drop-shadow-[0_8px_14px_rgba(0,0,0,0.25)] select-none pointer-events-none"
+                draggable={false}
+              />
+            ) : (
+              <span className="text-4xl filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.2)] select-none pointer-events-none">
+                {curBowl?.icon || '🥣'}
+              </span>
+            )}
           </div>
 
           {/* Floating Free Water Gift Button (8 tiếng nhận 5 nước miễn phí) */}
@@ -438,16 +602,16 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
                 <path
                   d="M94 85C97 88 100 88 100 85C100 88 103 88 106 85"
                   fill="none"
-                  stroke={palette.mouth || '#731709'}
+                  stroke={(palette as Record<string, string | undefined>).mouth || '#731709'}
                   strokeLinecap="round"
                   strokeWidth="2.5"
                 />
 
                 {/* Whiskers */}
-                <line stroke={palette.whiskers || '#dec0ba'} strokeLinecap="round" strokeWidth="2" x1="56" x2="40" y1="80" y2="78" />
-                <line stroke={palette.whiskers || '#dec0ba'} strokeLinecap="round" strokeWidth="2" x1="56" x2="38" y1="86" y2="88" />
-                <line stroke={palette.whiskers || '#dec0ba'} strokeLinecap="round" strokeWidth="2" x1="144" x2="160" y1="80" y2="78" />
-                <line stroke={palette.whiskers || '#dec0ba'} strokeLinecap="round" strokeWidth="2" x1="144" x2="162" y1="86" y2="88" />
+                <line stroke={(palette as Record<string, string | undefined>).whiskers || '#dec0ba'} strokeLinecap="round" strokeWidth="2" x1="56" x2="40" y1="80" y2="78" />
+                <line stroke={(palette as Record<string, string | undefined>).whiskers || '#dec0ba'} strokeLinecap="round" strokeWidth="2" x1="56" x2="38" y1="86" y2="88" />
+                <line stroke={(palette as Record<string, string | undefined>).whiskers || '#dec0ba'} strokeLinecap="round" strokeWidth="2" x1="144" x2="160" y1="80" y2="78" />
+                <line stroke={(palette as Record<string, string | undefined>).whiskers || '#dec0ba'} strokeLinecap="round" strokeWidth="2" x1="144" x2="162" y1="86" y2="88" />
 
                 {/* Sleeping Paws tucked in */}
                 <ellipse cx="80" cy="132" fill={palette.furLight || '#fff8f7'} rx="14" ry="10" />
@@ -470,7 +634,7 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
               >
                 {pop.isCrit ? (
                   <span className="bg-surface-container-lowest/95 px-2 py-0.5 rounded-full text-tertiary font-extrabold shadow-md border border-tertiary-fixed text-[11px] sm:text-xs">
-                    ✨ {pop.text}
+                     {pop.text}
                   </span>
                 ) : (
                   <span className="bg-surface-container-lowest/95 px-1.5 py-0.5 rounded-full text-primary font-bold shadow-sm border border-primary-fixed text-[11px] sm:text-xs">
@@ -614,23 +778,12 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
 
       {/* 5. Quick Action Floating Pill Bar */}
       <div className="w-full flex items-center justify-between gap-space-xs pt-space-xs">
-        {/* Quick Feed */}
-        <button
-          type="button"
-          onClick={() => setIsFeedModalOpen(true)}
-          className="flex-1 bg-surface-container-lowest text-on-surface p-space-sm rounded-lg flex flex-col items-center justify-center gap-1 shadow-[0_3px_0_#dec0ba] active:translate-y-0.5 active:shadow-[0_1px_0_#dec0ba] transition-all cursor-pointer border border-outline-variant/30"
-        >
-          <div className="w-9 h-9 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center">
-            <span className="material-symbols-outlined text-[20px]">lunch_dining</span>
-          </div>
-          <span className="font-label-sm text-label-sm text-center leading-tight font-bold">Cho Ăn</span>
-          <span className="font-label-sm text-label-sm text-secondary font-bold">Túi Đồ Ăn</span>
-        </button>
+        
 
-        {/* Shop Thời Trang & Trang Trí Phòng */}
+        {/* Shop Thời Trang & Trang Trí Phòng (Chuyển trang toàn màn hình) */}
         <button
           type="button"
-          onClick={() => setIsFashionShopOpen(true)}
+          onClick={onOpenFashionShop}
           className="flex-1 bg-surface-container-lowest text-on-surface p-space-sm rounded-lg flex flex-col items-center justify-center gap-1 shadow-[0_3px_0_#dec0ba] active:translate-y-0.5 active:shadow-[0_1px_0_#dec0ba] transition-all cursor-pointer border border-outline-variant/30 hover:bg-surface-bright"
           title="Mở Shop Thời Trang (Áo, Mũ & Đồ Trang Trí Phòng)"
         >
@@ -640,7 +793,7 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
             </span>
           </div>
           <span className="font-label-sm text-label-sm text-center leading-tight font-bold">Thời Trang</span>
-          <span className="font-label-sm text-label-sm text-rose-700 font-bold">Áo, Mũ & Phòng</span>
+          {/* <span className="font-label-sm text-label-sm text-rose-700 font-bold">Áo, Mũ & Phòng</span> */}
         </button>
 
         {/* Balo Của Boss Shortcut */}
@@ -654,9 +807,9 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
             <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>backpack</span>
           </div>
           <span className="font-label-sm text-label-sm text-center leading-tight font-bold">Balo</span>
-          <span className="font-label-sm text-label-sm text-secondary font-bold">
+          {/* <span className="font-label-sm text-label-sm text-secondary font-bold">
             {basketCount > 0 ? `${basketCount} cá • Đồ đạc` : 'Kho đồ đạc'}
-          </span>
+          </span> */}
         </button>
       </div>
 
@@ -861,23 +1014,6 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
             })()}
           </div>
         </div>
-      )}
-
-      {/* 7. Fashion & Room Decor Shop Modal */}
-      {isFashionShopOpen && (
-        <FashionShopModal
-          isOpen={isFashionShopOpen}
-          onClose={() => setIsFashionShopOpen(false)}
-          coins={coins}
-          ownedHats={ownedHats}
-          equippedHat={equippedHat}
-          ownedClothes={ownedClothes}
-          equippedClothes={equippedClothes}
-          ownedRoomDecor={ownedRoomDecor}
-          equippedDecor={equippedDecor}
-          onBuyItem={onBuyFashionItem || (() => ({ success: false, message: 'Chưa hỗ trợ' }))}
-          onEquipItem={onEquipFashionItem || (() => false)}
-        />
       )}
     </div>
   );

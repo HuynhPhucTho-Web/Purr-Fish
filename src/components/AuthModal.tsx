@@ -146,7 +146,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Header */}
         <div className="modal-header">
           <div className="modal-title-wrap">
-            <span className="modal-icon">{tab === 'register' ? '✨' : '🔑'}</span>
+            <span className="modal-icon">{tab === 'register' ? '' : '🔑'}</span>
             <div>
               <h3>{tab === 'register' ? 'Tạo Tài Khoản Mèo Cưng' : 'Đăng Nhập Tài Khoản'}</h3>
               <p className="modal-subtext">Lưu tiến trình Cloud & đua top Bảng Xếp Hạng</p>
@@ -200,7 +200,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     setErrorMessage(null);
                   }}
                 >
-                  ✨ Tạo Tài Khoản Mới
+                   Tạo Tài Khoản Mới
                 </button>
                 <button
                   type="button"
@@ -297,7 +297,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   {isLoading
                     ? 'Đang xử lý...'
                     : tab === 'register'
-                    ? '✨ Tạo Tài Khoản & Vào Chơi'
+                    ? ' Tạo Tài Khoản & Vào Chơi'
                     : '🚀 Đăng Nhập & Vào Chơi'}
                 </button>
               </form>
@@ -325,7 +325,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       setTab('register');
                     }}
                   >
-                    ✨ Tạo tài khoản mới
+                     Tạo tài khoản mới
                   </button>
                 )}
               </div>

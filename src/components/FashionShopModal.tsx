@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  FASHION_DECOR_CATALOG,
   getItemsByCategory,
   type FashionCategory,
   type FashionDecorItem,
@@ -84,7 +83,7 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
       if (equipped && (item.category === 'hats' || item.category === 'clothes')) {
         showToast(`Đã tháo ${item.name}!`);
       } else {
-        showToast(`Đã trang bị ${item.name}! ✨`);
+        showToast(`Đã trang bị ${item.name}! `);
       }
     }
   };
@@ -106,7 +105,7 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
         {/* Floating Toast Notification */}
         {toastMessage && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg flex items-center gap-1.5 animate-bounce-in">
-            <span>✨</span>
+            <span></span>
             <span>{toastMessage}</span>
           </div>
         )}
@@ -251,7 +250,7 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
         <div className="flex-1 overflow-y-auto p-3.5 flex flex-col gap-2.5">
           {activeTab === 'bowls' && (
             <div className="bg-amber-50 text-amber-900 border border-amber-200 text-[11px] font-bold p-2.5 rounded-xl flex items-center gap-2">
-              <span className="text-base">✨</span>
+              <span className="text-base"></span>
               <span>Máng ăn sau khi trang bị sẽ xuất hiện ngay tại sảnh phòng của mèo!</span>
             </div>
           )}
@@ -304,7 +303,7 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
 
                       {item.perk && (
                         <p className="text-[11px] font-bold text-secondary mt-0.5 leading-tight">
-                          ✨ {item.perk}
+                           {item.perk}
                         </p>
                       )}
 

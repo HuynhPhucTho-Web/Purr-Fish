@@ -2,8 +2,6 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { UPGRADES } from '../data/upgrades';
 import { SKINS, type CatSkin } from '../data/skins';
 import {
-  rollRandomFish,
-  calculateRandomFishDrop,
   FISH_CATALOG,
   type FishSpecies,
   createCaughtFish,
@@ -14,7 +12,7 @@ import {
   getCatGrowthStage,
 } from '../data/rankTiers';
 import type { FoodItem, MealPlan } from '../data/foodShop';
-import { FISHING_RODS_CATALOG, getRodById, type FishingRod } from '../data/fishingRods';
+import { getRodById } from '../data/fishingRods';
 import { type FashionDecorItem } from '../data/fashionAndDecor';
 import { authService, type UserProfileInfo } from '../services/authService';
 import { cloudSaveService } from '../services/cloudSaveService';
@@ -24,6 +22,7 @@ import {
   calculateClickPower,
   calculateAutoFishRate,
   calculateComboMultiplier,
+  formatNumber,
 } from '../utils/economy';
 import {
   loadGame,
@@ -145,10 +144,18 @@ export function useGameState() {
     return () => clearTimeout(timer);
   }, [data, currentUser, syncToCloud]);
 
-  // Sync sound settings with soundManager
+  // Sync sound & music settings with soundManager
   useEffect(() => {
     soundManager.enabled = data.settings.soundEnabled;
-  }, [data.settings.soundEnabled]);
+    soundManager.sfxVolume = (data.settings.sfxVolume ?? 80) / 100;
+    soundManager.musicEnabled = data.settings.musicEnabled ?? true;
+    soundManager.musicVolume = (data.settings.musicVolume ?? 50) / 100;
+  }, [
+    data.settings.soundEnabled,
+    data.settings.sfxVolume,
+    data.settings.musicEnabled,
+    data.settings.musicVolume,
+  ]);
 
   // Find currently equipped skin object
   const currentSkin: CatSkin = useMemo(() => {
@@ -179,30 +186,34 @@ export function useGameState() {
     return Math.floor(baseClickPower * comboMultiplier);
   }, [baseClickPower, comboMultiplier]);
 
-  // Auto-fish rate per second (boosted when well-fed and hydrated!)
+  // Auto-fish rate per second (Hardcore: Ngừng hoạt động hoàn toàn nếu mèo đói hoặc khát!)
   const autoFishRate = useMemo(() => {
+    // Nếu đói < 15% hoặc khát < 15%, mèo kiệt sức hoàn toàn, auto-fish dừng hẳn
+    if (data.food < 15 || data.water < 15) {
+      return 0;
+    }
     const rawRate = calculateAutoFishRate(speedyLevel, royalLevel, currentSkin.autoBonusMultiplier);
     let statusMult = 1.0;
-    if (data.food >= 60 && data.water >= 60) {
-      statusMult = 1.25;
-    } else if (data.food < 20 || data.water < 20) {
-      statusMult = 0.75;
+    if (data.food >= 70 && data.water >= 70) {
+      statusMult = 1.15;
+    } else if (data.food < 40 || data.water < 40) {
+      statusMult = 0.5;
     }
     return Math.floor(rawRate * statusMult);
   }, [speedyLevel, royalLevel, currentSkin.autoBonusMultiplier, data.food, data.water]);
 
-  // Gradual food & water decay timer + auto-feed from active meal plan
+  // Gradual food & water decay timer + auto-feed from active meal plan (Tăng tốc độ hao hụt thể lực)
   useEffect(() => {
     const petTimer = setInterval(() => {
       setData((prev) => {
-        let newFood = Math.max(0, Math.round((prev.food - 0.4) * 10) / 10);
-        let newWater = Math.max(0, Math.round((prev.water - 0.5) * 10) / 10);
+        let newFood = Math.max(0, Math.round((prev.food - 0.7) * 10) / 10);
+        let newWater = Math.max(0, Math.round((prev.water - 0.8) * 10) / 10);
         let activePlan = prev.activeMealPlan ? { ...prev.activeMealPlan } : null;
 
-        // Tự động cho ăn nếu có gói kế hoạch dinh dưỡng và mèo đang đói hoặc khát (< 30%)
-        if (activePlan && activePlan.autoFeedMealsRemaining > 0 && (newFood < 30 || newWater < 30)) {
-          newFood = Math.min(100, newFood + 40);
-          newWater = Math.min(100, newWater + 40);
+        // Tự động cho ăn nếu có gói kế hoạch dinh dưỡng và mèo đang đói hoặc khát (< 25%)
+        if (activePlan && activePlan.autoFeedMealsRemaining > 0 && (newFood < 25 || newWater < 25)) {
+          newFood = Math.min(100, newFood + 30);
+          newWater = Math.min(100, newWater + 30);
           activePlan.autoFeedMealsRemaining -= 1;
           soundManager.playEat();
         }
@@ -214,7 +225,7 @@ export function useGameState() {
           activeMealPlan: activePlan,
         };
       });
-    }, 4500);
+    }, 3500);
 
     return () => clearInterval(petTimer);
   }, []);
@@ -263,27 +274,28 @@ export function useGameState() {
     setOfflineReward(null);
   }, [offlineReward]);
 
-  // Handle Cat Click / Tap
+  // Handle Cat Click / Tap (Hardcore Balance: Đói hoặc Khát < 15% sẽ không nhận được xu!)
   const handleClick = useCallback(
     (clientX?: number, clientY?: number) => {
-      // 1. Cat petting & cuddle: Mèo nhận tình cảm, nhả xu thưởng (không bắt cá ở đây)
-      const hungerFactor = data.food >= 20 && data.water >= 20 ? 1.0 : 0.6;
-      const isCrit = Math.random() < (0.12 + (isFrenzy ? 0.35 : 0));
-      const critMultiplier = isCrit ? 2.5 : 1.0;
-      const earned = Math.max(
-        1,
-        Math.round(baseClickPower * comboMultiplier * hungerFactor * critMultiplier)
-      );
+      const isExhausted = data.food < 15 || data.water < 15;
+      const hungerFactor = data.food >= 60 && data.water >= 60 ? 1.0 : 0.6;
+      const isCrit = !isExhausted && Math.random() < (0.06 + (isFrenzy ? 0.14 : 0));
+      const critMultiplier = isCrit ? 1.6 : 1.0;
+
+      // Nếu đói khát kiệt sức: 0 xu thưởng! Bắt buộc phải cho ăn uống
+      const earned = isExhausted
+        ? 0
+        : Math.max(1, Math.round(baseClickPower * comboMultiplier * hungerFactor * critMultiplier));
 
       // 2. Play sound (pitch elevates with combo & crit)
-      const pitch = Math.min(1.9, 1.0 + comboCount * 0.015 + (isCrit ? 0.3 : 0));
+      const pitch = isExhausted ? 0.7 : Math.min(1.8, 1.0 + comboCount * 0.012 + (isCrit ? 0.25 : 0));
       soundManager.playPop(pitch);
       if (isCrit) {
         soundManager.playUpgrade();
       }
 
       if (data.settings.hapticsEnabled) {
-        soundManager.triggerHaptic(isCrit || isFrenzy ? 35 : 15);
+        soundManager.triggerHaptic(isCrit || isFrenzy ? 30 : 12);
       }
 
       // 3. Animate cat open mouth / happy expression (160ms duration)
@@ -293,15 +305,19 @@ export function useGameState() {
         setIsCatActive(false);
       }, 160);
 
-      // 4. Update combo streak
-      setComboCount((prev) => prev + 1);
-      if (comboTimerRef.current) clearTimeout(comboTimerRef.current);
-      const comboDuration = 2200 + comboUpgradeLevel * 400; // time window to keep combo alive
-      comboTimerRef.current = setTimeout(() => {
+      // 4. Update combo streak (Cửa sổ combo ngắn hơn, đòi hỏi nhịp gõ chuẩn xác)
+      if (!isExhausted) {
+        setComboCount((prev) => prev + 1);
+        if (comboTimerRef.current) clearTimeout(comboTimerRef.current);
+        const comboDuration = 1400 + comboUpgradeLevel * 200; // 1.4s cơ bản (thay vì 2.2s)
+        comboTimerRef.current = setTimeout(() => {
+          setComboCount(0);
+        }, comboDuration);
+      } else {
         setComboCount(0);
-      }, comboDuration);
+      }
 
-      // 5. Update coins & physical energy (slightly consume hunger/thirst)
+      // 5. Update coins & physical energy (Tiêu hao thể lực nhanh hơn khi click)
       setData((prev) => {
         const newFish = prev.fish + earned;
         const newTotal = prev.totalFish + earned;
@@ -314,8 +330,8 @@ export function useGameState() {
           totalCoinsEarned: (prev.totalCoinsEarned || 0) + earned,
           highestFish: newHighest,
           totalClicks: prev.totalClicks + 1,
-          food: Math.max(0, Math.round((prev.food - 0.08) * 10) / 10),
-          water: Math.max(0, Math.round((prev.water - 0.06) * 10) / 10),
+          food: Math.max(0, Math.round((prev.food - 0.16) * 10) / 10),
+          water: Math.max(0, Math.round((prev.water - 0.14) * 10) / 10),
         };
       });
 
@@ -328,23 +344,23 @@ export function useGameState() {
             id: floatId,
             x: clientX,
             y: clientY,
-            text: isCrit ? `+${earned} 🪙 CRIT!` : `+${earned} 🪙`,
+            text: isExhausted ? '0 🪙 Kiệt sức!' : isCrit ? `+${earned} 🪙 CRIT!` : `+${earned} 🪙`,
             isCrit: isCrit || isFrenzy,
             fishImage: '',
-            fishName: isCrit ? '💖 Siêu cưng!' : '🐾 Vuốt ve',
-            rarityColor: '#FF69B4',
+            fishName: isExhausted ? '😿 Mèo đói lả / Khát khô!' : isCrit ? '💖 Siêu cưng!' : '🐾 Vuốt ve',
+            rarityColor: isExhausted ? '#EF4444' : '#FF69B4',
           },
         ]);
 
-        if (data.settings.particlesEnabled) {
+        if (data.settings.particlesEnabled && !isExhausted) {
           const sparkColors = ['#FFD700', '#FFA07A', '#FF69B4', '#87CEFA', '#FFF'];
-          const newSparks: SparkleItem[] = Array.from({ length: 4 }).map(() => ({
+          const newSparks: SparkleItem[] = Array.from({ length: 3 }).map(() => ({
             id: `spark_${Date.now()}_${Math.random()}`,
             x: clientX,
             y: clientY,
             color: sparkColors[Math.floor(Math.random() * sparkColors.length)],
-            vx: (Math.random() - 0.5) * 60,
-            vy: -30 - Math.random() * 40,
+            vx: (Math.random() - 0.5) * 50,
+            vy: -25 - Math.random() * 35,
           }));
           setSparkles((prev) => [...prev.slice(-25), ...newSparks]);
         }
@@ -377,17 +393,19 @@ export function useGameState() {
       const caughtItem = createCaughtFish(species);
       setLastCaughtFish(species);
 
-      // Thưởng XP thăng cấp dựa trên cân nặng và độ khó của loài cá
-      const gainedXp = Math.round(caughtItem.weightKg * 14 * (species.difficultyLevel || 1));
-      // Thưởng xu câu cá trực tiếp (25% giá trị cá, 75% còn lại nhận khi bán ở giỏ cá)
-      const instantCoins = Math.max(5, Math.round(caughtItem.sellPrice * 0.25));
+      // Thưởng XP thăng cấp khi bắt cá (Hardcore: căn bậc 2 trọng lượng, tăng trưởng chậm & chống lạm phát)
+      const gainedXp = Math.max(
+        1,
+        Math.round(Math.sqrt(caughtItem.weightKg) * 2.2 * (species.difficultyLevel || 1))
+      );
+      // Chống lạm phát: Không thưởng xu trùng lặp tức thì, toàn bộ tiền nhận khi bán tại Giỏ Cá!
 
       setData((prev) => {
         const safeBasket = Array.isArray(prev.fishBasket) ? prev.fishBasket : [];
         const newBasket = [caughtItem, ...safeBasket].slice(0, 50); // Giữ tối đa 50 con trong giỏ
         const newBiggest = Math.max(prev.biggestFishKg || 0, caughtItem.weightKg);
         const newTotalCaught = (prev.totalFishCaught || 0) + 1;
-        const newCoins = (prev.fish || 0) + instantCoins;
+        const newCoins = prev.fish;
         const newXp = (prev.xp || 0) + gainedXp;
 
         return {
@@ -395,8 +413,6 @@ export function useGameState() {
           fish: newCoins,
           coins: newCoins,
           xp: newXp,
-          totalCoinsEarned: (prev.totalCoinsEarned || 0) + instantCoins,
-          totalFish: (prev.totalFish || 0) + instantCoins,
           highestFish: Math.max(prev.highestFish || 0, newCoins),
           fishBasket: newBasket,
           biggestFishKg: newBiggest,
@@ -525,13 +541,10 @@ export function useGameState() {
         soundManager.playEat();
         if (data.settings.hapticsEnabled) soundManager.triggerHaptic(35);
 
-        // Hệ số độ đắt / phẩm cấp của thức ăn (độ đắt càng cao thì thưởng XP & dinh dưỡng càng đậm)
-        // Giá từ 25 -> 9000, hệ số luxury bonus từ 1.0 đến 2.5
-        const richnessBonus = 1 + Math.min(1.5, Math.round((foodItem.price / 3000) * 100) / 100);
-
+        // Thưởng XP dinh dưỡng chuẩn từ món ăn (không nhân hệ số richness để chống lạm phát)
         const baseFoodRestore = foodItem.foodRestore * qty;
         const baseWaterRestore = foodItem.waterRestore * qty;
-        const totalXp = Math.round(foodItem.xpReward * qty * richnessBonus);
+        const totalXp = Math.round(foodItem.xpReward * qty);
 
         const newFood = Math.min(100, Math.round(prev.food + baseFoodRestore));
         const newWater = Math.min(100, Math.round(prev.water + baseWaterRestore));
@@ -663,6 +676,37 @@ export function useGameState() {
           };
         }
 
+        // Nếu đã sở hữu cần này: đổi cần miễn phí hoặc sửa cần khi hỏng
+        if (currentUnlocked.includes(rod.id)) {
+          const isBroken = prev.equippedRodId === rod.id && (prev.rodDurability ?? 10) <= 0;
+          if (isBroken) {
+            const repairCost = Math.max(30, Math.floor(rod.price * 0.35));
+            if (repairCost > 0 && prev.fish < repairCost) {
+              res = { success: false, message: `Không đủ xu để sửa cần (${formatNumber(repairCost)} xu)!` };
+              return prev;
+            }
+            soundManager.playUpgrade();
+            const newCoins = prev.fish - repairCost;
+            res = { success: true, message: `Đã sửa ${rod.name} (${rod.maxDurability}/${rod.maxDurability} lượt)!` };
+            return {
+              ...prev,
+              fish: newCoins,
+              coins: newCoins,
+              equippedRodId: rod.id,
+              rodDurability: rod.maxDurability,
+            };
+          }
+
+          soundManager.playUpgrade();
+          res = { success: true, message: `Đã đổi sang ${rod.name}!` };
+          return {
+            ...prev,
+            equippedRodId: rod.id,
+            rodDurability: prev.equippedRodId === rod.id ? (prev.rodDurability ?? rod.maxDurability) : rod.maxDurability,
+            unlockedRods: updatedUnlocked,
+          };
+        }
+
         if (prev.fish < rod.price) {
           res = { success: false, message: `Không đủ xu để mua ${rod.name}!` };
           return prev;
@@ -691,7 +735,7 @@ export function useGameState() {
     [data.settings.hapticsEnabled]
   );
 
-  // Giảm 1 điểm độ bền của cần sau mỗi lần quăng (dù trúng hay hụt)
+  // Giảm độ bền của cần sau mỗi lần quăng (dù trúng hay hụt)
   const useRodDurability = useCallback((): number => {
     let remaining = 0;
     setData((prev) => {
@@ -705,8 +749,8 @@ export function useGameState() {
     return remaining;
   }, []);
 
-  // Nhận Quà Nước Miễn Phí (8 tiếng hồi chiêu một lần, nhận 5 nước miễn phí)
-  const FREE_WATER_COOLDOWN_MS = 8 * 60 * 60 * 1000;
+  // Nhận Quà Nước Miễn Phí (12 tiếng hồi chiêu một lần, nhận 2 nước)
+  const FREE_WATER_COOLDOWN_MS = 12 * 60 * 60 * 1000;
   const claimFreeWaterGift = useCallback((): {
     success: boolean;
     message: string;
@@ -736,7 +780,7 @@ export function useGameState() {
         return prev;
       }
 
-      // Claim success: Tặng 5 Nước miễn phí (hồi đầy nước 100% + cộng 5 bình vào túi đồ ăn!)
+      // Claim success: Tặng 2 Nước miễn phí (hồi nước lên 70% + cộng 2 bình vào túi đồ ăn!)
       soundManager.playUnlock();
       soundManager.playDrink();
       if (data.settings.hapticsEnabled) soundManager.triggerHaptic(40);
@@ -744,19 +788,19 @@ export function useGameState() {
       const currentWaterBottles = (prev.foodInventory && prev.foodInventory['09_sua']) || 0;
       const newInventory = {
         ...(prev.foodInventory || {}),
-        '09_sua': currentWaterBottles + 5,
+        '09_sua': currentWaterBottles + 2,
       };
 
       result = {
         success: true,
-        message: '🎉 Nhận thành công 5 Nước Miễn Phí! Nước đã đầy 100% và nhận thêm 5 bình vào kho!',
+        message: '🎉 Nhận thành công 2 Nước Miễn Phí! Nước hồi 70% và nhận thêm 2 bình vào kho!',
         remainingMs: FREE_WATER_COOLDOWN_MS,
-        gainedWater: 5,
+        gainedWater: 2,
       };
 
       return {
         ...prev,
-        water: 100, // Làm đầy bình nước ngay lập tức
+        water: Math.max(prev.water, 70),
         foodInventory: newInventory,
         lastWaterGiftClaimedAt: now,
       };
@@ -791,7 +835,7 @@ export function useGameState() {
             ownedHats: newOwned,
             equippedHat: item.id,
           };
-          res = { success: true, message: `Đã mua và đội ${item.name}! ✨` };
+          res = { success: true, message: `Đã mua và đội ${item.name}! ` };
         } else if (item.category === 'clothes') {
           const owned = prev.ownedClothes || [];
           const newOwned = owned.includes(item.id) ? owned : [...owned, item.id];
@@ -800,7 +844,7 @@ export function useGameState() {
             ownedClothes: newOwned,
             equippedClothes: item.id,
           };
-          res = { success: true, message: `Đã mua và mặc ${item.name}! ✨` };
+          res = { success: true, message: `Đã mua và mặc ${item.name}! ` };
         } else {
           // bowls, balls, rugs
           const owned = prev.ownedRoomDecor || ['bowl_clay', 'ball_yarn_red', 'rug_peach'];
@@ -815,7 +859,7 @@ export function useGameState() {
               [slotKey]: item.id,
             },
           };
-          res = { success: true, message: `Đã mua và đặt ${item.name} tại sảnh phòng! 🛋️✨` };
+          res = { success: true, message: `Đã mua và đặt ${item.name} tại sảnh phòng! 🛋️` };
         }
 
         return updatedPrev;

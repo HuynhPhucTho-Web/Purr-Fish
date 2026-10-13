@@ -1,9 +1,24 @@
-// High Quality Web Audio API sound generator for cute game sound effects
+// High Quality Web Audio API sound generator for cute game sound effects & music
 class SoundController {
   private ctx: AudioContext | null = null;
   private _enabled: boolean = true;
+  private _musicEnabled: boolean = true;
+  private _sfxVolume: number = 0.8;
+  private _musicVolume: number = 0.5;
   private castWhooshAudio: HTMLAudioElement | null = null;
   private reelingAudio: HTMLAudioElement | null = null;
+  private bgmGainNode: GainNode | null = null;
+  private isBgmPlaying: boolean = false;
+  private bgmIntervalId: ReturnType<typeof setInterval> | null = null;
+  private bgmStep: number = 0;
+
+  // Lofi peaceful pentatonic melody notes (C - E - G - B - A - F)
+  private bgmMelody = [
+    261.63, 329.63, 392.00, 523.25,
+    220.00, 261.63, 329.63, 392.00,
+    174.61, 220.00, 261.63, 349.23,
+    196.00, 246.94, 293.66, 392.00,
+  ];
 
   public get enabled(): boolean {
     return this._enabled;
@@ -16,8 +31,95 @@ class SoundController {
     }
   }
 
+  public get musicEnabled(): boolean {
+    return this._musicEnabled;
+  }
+
+  public set musicEnabled(val: boolean) {
+    this._musicEnabled = val;
+    if (val) {
+      this.startBgm();
+    } else {
+      this.stopBgm();
+    }
+  }
+
+  public get sfxVolume(): number {
+    return this._sfxVolume;
+  }
+
+  public set sfxVolume(val: number) {
+    this._sfxVolume = Math.max(0, Math.min(1, val));
+  }
+
+  public get musicVolume(): number {
+    return this._musicVolume;
+  }
+
+  public set musicVolume(val: number) {
+    this._musicVolume = Math.max(0, Math.min(1, val));
+    if (this.bgmGainNode && this.ctx) {
+      this.bgmGainNode.gain.setValueAtTime(this._musicVolume * 0.12, this.ctx.currentTime);
+    }
+  }
+
+  public startBgm() {
+    if (!this._musicEnabled) return;
+    if (this.isBgmPlaying) return;
+
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    this.isBgmPlaying = true;
+    if (!this.bgmGainNode) {
+      this.bgmGainNode = ctx.createGain();
+      this.bgmGainNode.connect(ctx.destination);
+    }
+    this.bgmGainNode.gain.setValueAtTime(this._musicVolume * 0.12, ctx.currentTime);
+
+    this.bgmStep = 0;
+    this.bgmIntervalId = setInterval(() => {
+      if (!this._musicEnabled || !this.ctx) return;
+      try {
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const noteGain = this.ctx.createGain();
+
+        const freq = this.bgmMelody[this.bgmStep % this.bgmMelody.length];
+        this.bgmStep += 1;
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now);
+
+        noteGain.gain.setValueAtTime(0.001, now);
+        noteGain.gain.linearRampToValueAtTime(0.18, now + 0.04);
+        noteGain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+
+        osc.connect(noteGain);
+        if (this.bgmGainNode) {
+          noteGain.connect(this.bgmGainNode);
+        } else {
+          noteGain.connect(this.ctx.destination);
+        }
+
+        osc.start(now);
+        osc.stop(now + 0.45);
+      } catch {
+        // Safe fallback
+      }
+    }, 450);
+  }
+
+  public stopBgm() {
+    this.isBgmPlaying = false;
+    if (this.bgmIntervalId) {
+      clearInterval(this.bgmIntervalId);
+      this.bgmIntervalId = null;
+    }
+  }
+
   private getContext(): AudioContext | null {
-    if (!this.enabled) return null;
+    if (!this.enabled && !this.musicEnabled) return null;
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (AudioCtx) {
@@ -52,7 +154,7 @@ class SoundController {
       osc.frequency.exponentialRampToValueAtTime(peakFreq, now + 0.04);
       osc.frequency.exponentialRampToValueAtTime(260 * pitchMultiplier, now + 0.12);
 
-      gain.gain.setValueAtTime(0.35, now);
+      gain.gain.setValueAtTime(0.35 * this._sfxVolume, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
 
       osc.connect(gain);
@@ -91,7 +193,7 @@ class SoundController {
       osc2.frequency.exponentialRampToValueAtTime(900, now + 0.35);
 
       gain.gain.setValueAtTime(0.01, now);
-      gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+      gain.gain.linearRampToValueAtTime(0.2 * this._sfxVolume, now + 0.05);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
 
       osc.connect(gain);

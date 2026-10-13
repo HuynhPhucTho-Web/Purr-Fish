@@ -4,12 +4,12 @@
  * Where C_0 is base cost and n is the current level.
  */
 export function calculateUpgradeCost(baseCost: number, level: number): number {
-  return Math.floor(baseCost * Math.pow(1.6, level));
+  return Math.floor(baseCost * Math.pow(1.75, level));
 }
 
 /**
- * Click Power Formula:
- * Cá nhận được = Sức mạnh click × Hệ số nhân × Combo Multiplier
+ * Click Power Formula (Hardcore Balance):
+ * Cá nhận được = Sức mạnh click × Hệ số nhân Cá Vàng × Combo Multiplier
  */
 export function calculateClickPower(
   clawLevel: number,
@@ -17,19 +17,17 @@ export function calculateClickPower(
   royalLevel: number,
   skinBonusMultiplier: number = 1
 ): number {
-  // Base click power starts at 1
-  // Móng vuốt khỏe: +1 cá mỗi click per level
-  const basePower = 1 + clawLevel * 1 + royalLevel * 5;
+  // Base click power: Tăng trưởng vững chắc, không lạm phát
+  const basePower = 1 + clawLevel * 0.5 + royalLevel * 2;
 
-  // Cá vàng: Nhân đôi cá mỗi click (x2 multiplier per level)
-  // To keep it balanced and super fun, each level of golden fish doubles or grants x1.5-x2
-  const goldenMultiplier = Math.pow(2, goldenFishLevel);
+  // Cá vàng: Tăng thêm +25% sản lượng click mỗi cấp (thay vì nhân đôi 2^n gây lạm phát)
+  const goldenMultiplier = 1 + goldenFishLevel * 0.25;
 
-  return Math.floor(basePower * goldenMultiplier * skinBonusMultiplier);
+  return Math.max(1, Math.floor(basePower * goldenMultiplier * skinBonusMultiplier));
 }
 
 /**
- * Auto-fish Formula:
+ * Auto-fish Formula (Hardcore Balance):
  * Cá tự động mỗi giây = Cấp Auto-fish × Tốc độ cơ bản + Royal Bonus
  */
 export function calculateAutoFishRate(
@@ -37,25 +35,25 @@ export function calculateAutoFishRate(
   royalLevel: number,
   skinBonusMultiplier: number = 1
 ): number {
-  const baseRate = speedyLevel * 1 + royalLevel * 10;
+  const baseRate = speedyLevel * 0.5 + royalLevel * 2.5;
   return Math.floor(baseRate * skinBonusMultiplier);
 }
 
 /**
- * Combo Multiplier based on combo streak count
- * Fills up with rapid clicking (10 clicks -> 1.5x, 25 clicks -> 2.0x, 50 clicks -> 3.0x, 100 clicks -> 5.0x)
+ * Combo Multiplier based on combo streak count (Hardcore Balance)
+ * Thưởng khi giữ nhịp click chuẩn xác, giới hạn trần chống lạm phát
  */
 export function calculateComboMultiplier(comboCount: number, comboUpgradeLevel: number): number {
   if (comboCount < 5) return 1.0;
   
-  // Combo upgrade increases multiplier scaling and bonus cap
-  const upgradeBonus = 1 + comboUpgradeLevel * 0.2;
+  // Combo upgrade tăng nhẹ hiệu quả combo
+  const upgradeBonus = 1 + comboUpgradeLevel * 0.08;
   
-  if (comboCount >= 100) return +(5.0 * upgradeBonus).toFixed(1);
-  if (comboCount >= 50) return +(3.5 * upgradeBonus).toFixed(1);
-  if (comboCount >= 25) return +(2.5 * upgradeBonus).toFixed(1);
-  if (comboCount >= 15) return +(1.8 * upgradeBonus).toFixed(1);
-  if (comboCount >= 5) return +(1.3 * upgradeBonus).toFixed(1);
+  if (comboCount >= 100) return +(2.4 * upgradeBonus).toFixed(1);
+  if (comboCount >= 50) return +(2.0 * upgradeBonus).toFixed(1);
+  if (comboCount >= 25) return +(1.6 * upgradeBonus).toFixed(1);
+  if (comboCount >= 15) return +(1.3 * upgradeBonus).toFixed(1);
+  if (comboCount >= 5) return +(1.15 * upgradeBonus).toFixed(1);
   return 1.0;
 }
 

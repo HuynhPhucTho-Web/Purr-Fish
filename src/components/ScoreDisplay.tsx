@@ -4,7 +4,7 @@ import type { UserProfileInfo } from '../services/authService';
 
 interface ScoreDisplayProps {
   fish: number; // Coins
-  highestFish: number;
+  highestFish?: number;
   level: number;
   rankBadge: string;
   rankTierName: string;
@@ -14,12 +14,11 @@ interface ScoreDisplayProps {
   onToggleSound: () => void;
   onOpenLeaderboard: () => void;
   onOpenAuth: () => void;
-  onOpenSettings: () => void;
+  onOpenSettings?: () => void;
 }
 
 export const ScoreDisplay: React.FC<ScoreDisplayProps> = ({
   fish,
-  highestFish,
   level,
   rankBadge,
   rankTierName,
@@ -79,13 +78,26 @@ export const ScoreDisplay: React.FC<ScoreDisplayProps> = ({
           {/* Quick Sound Toggle */}
           <button
             type="button"
-            className="w-8 h-8 rounded-full bg-surface-container-lowest/95 shadow-[0_2px_6px_rgba(122,105,104,0.08)] border border-outline-variant/40 flex items-center justify-center text-sm cursor-pointer"
+            className="w-8 h-8 rounded-full bg-surface-container-lowest/95 shadow-[0_2px_6px_rgba(122,105,104,0.08)] border border-outline-variant/40 flex items-center justify-center text-sm cursor-pointer hover:bg-surface-container active:scale-95 transition-transform"
             onClick={onToggleSound}
             title={soundEnabled ? 'Tắt âm thanh' : 'Bật âm thanh'}
             aria-label="Cài đặt âm thanh"
           >
             {soundEnabled ? '🔊' : '🔇'}
           </button>
+
+          {/* Settings Gear Button (Nút Bánh Răng) */}
+          {onOpenSettings && (
+            <button
+              type="button"
+              className="w-8 h-8 rounded-full bg-surface-container-lowest/95 shadow-[0_2px_6px_rgba(122,105,104,0.08)] border border-outline-variant/40 flex items-center justify-center text-sm cursor-pointer hover:bg-surface-container active:scale-95 transition-transform"
+              onClick={onOpenSettings}
+              title="Cài đặt trò chơi (Loa, Nhạc, Hiệu ứng...)"
+              aria-label="Cài đặt trò chơi"
+            >
+              ⚙️
+            </button>
+          )}
         </div>
 
         {/* Profile Avatar with Level Badge */}

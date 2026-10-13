@@ -77,8 +77,6 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
   totalFishCaught = 148250,
   saveStatus = 'Đã đồng bộ an toàn',
   onSaveNow,
-  onExportSave,
-  onImportSave,
   onSyncCloudNow,
 }) => {
   const [filterTab, setFilterTab] = useState<FilterTab>('week');
@@ -88,16 +86,10 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
     subtitle: `${formatNumber(totalFishCaught)} cá & tiến trình Rank #42 đã sao lưu đám mây.`,
   });
 
-  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
-  const [importCodeInput, setImportCodeInput] = useState<string>('');
-  const [copied, setCopied] = useState<boolean>(false);
-  const [exportCode, setExportCode] = useState<string>('PF-SAVE-8842-MIU');
-
   // Sync Status display
   const syncTimeText = useMemo(() => {
     if (saveStatus && saveStatus.includes('Đã lưu')) return saveStatus;
-    return 'Đã đồng bộ lúc 2 phút trước';
+    return 'Đã đồng bộ an toàn';
   }, [saveStatus]);
 
   // Rank position (Hypothetical rank)
@@ -145,67 +137,6 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
     setTimeout(() => {
       setShowToast(false);
     }, 3200);
-  };
-
-  // Export Code Modal Open
-  const handleOpenExport = () => {
-    soundManager.playPop();
-    if (onExportSave) {
-      try {
-        const raw = onExportSave();
-        if (raw) {
-          // Compact formatted code
-          setExportCode(raw.length > 36 ? `PF-${raw.slice(0, 16)}...` : raw);
-        }
-      } catch {
-        setExportCode('PF-SAVE-8842-MIU');
-      }
-    } else {
-      setExportCode('PF-SAVE-8842-MIU');
-    }
-    setCopied(false);
-    setIsExportModalOpen(true);
-  };
-
-  // Copy code
-  const handleCopyCode = async () => {
-    soundManager.playPop();
-    try {
-      const fullCode = onExportSave ? onExportSave() : exportCode;
-      await navigator.clipboard.writeText(fullCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  // Import Code
-  const handleOpenImport = () => {
-    soundManager.playPop();
-    setImportCodeInput('');
-    setIsImportModalOpen(true);
-  };
-
-  const handleConfirmImport = () => {
-    if (!importCodeInput.trim()) return;
-    soundManager.playPop();
-    if (onImportSave) {
-      const ok = onImportSave(importCodeInput.trim());
-      if (ok) {
-        soundManager.playUpgrade();
-        setIsImportModalOpen(false);
-        setToastMessage({
-          title: 'Khôi Phục Thành Công!',
-          subtitle: 'Tiến trình chơi và tài khoản của bạn đã được tải lại.',
-        });
-        setShowToast(true);
-        setTimeout(() => setShowToast(false), 3000);
-      } else {
-        alert('Mã sao lưu không hợp lệ hoặc đã hết hạn.');
-      }
-    }
   };
 
   // Podium Data based on active tab
@@ -587,13 +518,25 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             </span>{' '}
             Bảng Vinh Danh
           </span>
-          <button
-            type="button"
-            onClick={handleRefresh}
-            className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[14px]">refresh</span> Làm mới: Mỗi 1 giờ
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSaveNow}
+              className="font-body-sm text-body-sm text-secondary hover:text-primary flex items-center gap-1 transition-colors cursor-pointer font-bold"
+              title={syncTimeText}
+            >
+              <span className="material-symbols-outlined text-[15px]">cloud_sync</span>
+              <span>Đồng bộ Rank</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[14px]">refresh</span>
+              <span>Làm mới</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 p-1 bg-surface-container-high rounded-full shadow-[inset_0_2px_4px_rgba(122,105,104,0.1)] gap-1">
@@ -847,104 +790,6 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
           </div>
         </div>
       </div>
-
-      {/* 8. EXPORT CODE MODAL */}
-      {isExportModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-on-background/40 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setIsExportModalOpen(false)}
-        >
-          <div
-            className="bg-surface-container-lowest rounded-xl p-space-xl max-w-sm w-full shadow-[0_16px_32px_rgba(74,62,61,0.25)] flex flex-col gap-space-md text-center transform animate-in zoom-in-95 duration-200 border border-outline-variant/30"
-            onClick={(e) => e.stopPropagation()}
-            id="code-modal-card"
-          >
-            <div className="w-14 h-14 mx-auto rounded-full bg-primary-container text-on-primary flex items-center justify-center shadow-[0_4px_10px_rgba(255,126,103,0.3)]">
-              <span className="material-symbols-outlined text-[32px]">vpn_key</span>
-            </div>
-            <div>
-              <h4 className="font-headline-sm text-headline-sm text-on-surface font-bold">
-                Mã Sao Lưu purr-fish
-              </h4>
-              <p className="font-body-sm text-body-sm text-on-surface-variant mt-1 text-xs">
-                Dùng mã này để chuyển tài khoản sang thiết bị khác mà không lo mất cá!
-              </p>
-            </div>
-            <div className="bg-surface-container-low p-space-md rounded-DEFAULT flex items-center justify-between border border-outline-variant/30">
-              <code className="font-label-md text-label-md text-primary font-mono tracking-wider truncate mr-2 select-all font-bold">
-                {exportCode}
-              </code>
-              <button
-                type="button"
-                onClick={handleCopyCode}
-                className="p-1.5 rounded-full bg-surface-container-lowest text-primary shadow-sm active:scale-95 transition-transform shrink-0 cursor-pointer"
-                title="Sao chép mã"
-                id="btn-copy-code"
-              >
-                <span className="material-symbols-outlined text-[18px]">
-                  {copied ? 'check' : 'content_copy'}
-                </span>
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsExportModalOpen(false)}
-              className="w-full py-2.5 rounded-full bg-primary text-on-primary font-label-md text-label-md shadow-[0_4px_0_#842415] active:translate-y-[2px] transition-all cursor-pointer font-bold"
-              id="btn-close-modal"
-            >
-              Đã Lưu Mã, Đóng Lại
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 9. IMPORT SAVE MODAL */}
-      {isImportModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-on-background/40 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setIsImportModalOpen(false)}
-        >
-          <div
-            className="bg-surface-container-lowest rounded-xl p-space-xl max-w-sm w-full shadow-[0_16px_32px_rgba(74,62,61,0.25)] flex flex-col gap-space-md text-center transform animate-in zoom-in-95 duration-200 border border-outline-variant/30"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="w-14 h-14 mx-auto rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center shadow-[0_4px_10px_rgba(16,185,129,0.3)]">
-              <span className="material-symbols-outlined text-[32px]">download</span>
-            </div>
-            <div>
-              <h4 className="font-headline-sm text-headline-sm text-on-surface font-bold">
-                Khôi Phục Tiến Trình
-              </h4>
-              <p className="font-body-sm text-body-sm text-on-surface-variant mt-1 text-xs">
-                Dán mã sao lưu tài khoản để tiếp tục hành trình câu cá!
-              </p>
-            </div>
-            <input
-              type="text"
-              value={importCodeInput}
-              onChange={(e) => setImportCodeInput(e.target.value)}
-              placeholder="Dán mã sao lưu PF-SAVE-... tại đây"
-              className="w-full p-space-md rounded-DEFAULT bg-surface-container-low border border-outline-variant/40 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setIsImportModalOpen(false)}
-                className="flex-1 py-2 rounded-full bg-surface-container text-on-surface-variant font-label-md text-label-md font-bold cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmImport}
-                className="flex-1 py-2 rounded-full bg-primary text-on-primary font-label-md text-label-md shadow-[0_3px_0_#842415] active:translate-y-[2px] transition-all font-bold cursor-pointer"
-              >
-                Nhập Ngay
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
