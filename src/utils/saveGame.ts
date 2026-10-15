@@ -1,4 +1,5 @@
 import type { CaughtFishItem } from '../data/fishes';
+import { calculateLevelFromTotalXp } from '../data/rankTiers';
 
 export interface ActiveMealPlanInfo {
   planId: string;
@@ -37,10 +38,26 @@ export interface GameSaveData {
   ownedRoomDecor?: string[]; // Đồ trang trí sảnh phòng đã sở hữu (máng ăn, banh, thảm)
   equippedDecor?: {
     bowl?: string; // Máng ăn đang trưng bày
-    ball?: string; // Banh / đồ chơi đang trưng bày
+    ball?: string; // Banh / đồ chơi đang trưng bày (legacy single)
+    balls?: string[]; // Danh sách tối đa 3 món đồ chơi gắn lên phòng mèo
     rug?: string; // Thảm trải phòng
+    room?: string; // Căn phòng nền background sảnh chơi
   };
+  decorPositions?: { [key: string]: { x: number; y: number } };
+  hatTransforms?: { [hatId: string]: { offsetX: number; offsetY: number; rotation: number; scale: number; isAttached: boolean } };
   lastWaterGiftClaimedAt?: number; // Thời điểm nhận quà nước miễn phí (8 tiếng hồi chiêu)
+  satietyExpiresAt?: number; // Thời điểm hết hạn hiệu ứng No Lâu (timestamp ms)
+  satietyTotalDurationMs?: number; // Tổng thời lượng của bữa ăn (ms) dùng để chia đều mức tiêu hao theo thời gian
+  zeroDecayUntil?: number; // Thời điểm hết hạn buff 0% hao hụt (ms)
+  satietyDecayReduction?: number; // Hệ số tốc độ giảm đói khi No Lâu (0.1 = -90% tốc độ đói)
+  satietyFoodName?: string; // Tên món ăn đang cấp hiệu ứng No Lâu
+  satietyFoodTier?: 'low' | 'mid' | 'high'; // Phẩm cấp món ăn đang no lâu
+  satietyFoodRate?: number; // % tiêu hao thức ăn mỗi giây
+  satietyWaterRate?: number; // % tiêu hao nước mỗi giây
+  catName?: string; // Tên chú mèo do người chơi đặt
+  displayName?: string; // Tên hiển thị người chơi
+  catAvatar?: string; // Ảnh đại diện của mèo
+  username?: string; // Tên tài khoản người chơi
   settings: {
     soundEnabled: boolean;
     musicEnabled: boolean;
@@ -92,13 +109,28 @@ export const DEFAULT_SAVE_DATA: GameSaveData = {
   equippedHat: '',
   ownedClothes: [],
   equippedClothes: '',
-  ownedRoomDecor: ['bowl_clay', 'ball_yarn_red', 'rug_peach'],
+  ownedRoomDecor: ['bowl_clay', 'ball_yarn_red', 'rug_peach', 'room_go_co_dien'],
   equippedDecor: {
     bowl: 'bowl_clay',
     ball: 'ball_yarn_red',
+    balls: ['ball_yarn_red'],
     rug: 'rug_peach',
+    room: 'room_go_co_dien',
   },
+  decorPositions: {},
+  hatTransforms: {},
   lastWaterGiftClaimedAt: 0, // 0 = Sẵn sàng nhận ngay lần đầu
+  satietyExpiresAt: 0,
+  satietyTotalDurationMs: 0,
+  zeroDecayUntil: 0,
+  satietyDecayReduction: 1.0,
+  satietyFoodName: '',
+  satietyFoodTier: 'low',
+  satietyFoodRate: 100 / 2700,
+  satietyWaterRate: 100 / 2700,
+  catName: 'Mèo Cưng',
+  catAvatar: '/images/cat_avatars_webp/avatar_01.webp',
+  username: '',
   settings: {
     soundEnabled: true,
     musicEnabled: true,
@@ -131,6 +163,139 @@ export function saveGame(data: GameSaveData): boolean {
 }
 
 /**
+ * Sanitizes and fills missing fields in any game save object
+ */
+export function sanitizeSaveData(parsed: Partial<GameSaveData>): GameSaveData {
+  const coinAmount = Math.max(0, Number(parsed.fish ?? parsed.coins) || 0);
+  const totalXp = Math.max(0, Number(parsed.xp) || 0);
+  const calculatedLevel = calculateLevelFromTotalXp(totalXp).level;
+  const level = Math.max(calculatedLevel, Number(parsed.level) || 1);
+
+  const rawFood = typeof parsed.food === 'number' ? Math.min(100, Math.max(0, parsed.food)) : 100;
+  const rawWater = typeof parsed.water === 'number' ? Math.min(100, Math.max(0, parsed.water)) : 100;
+  const lastSavedTime = parsed.lastSaved || Date.now();
+  const now = Date.now();
+  const elapsedSec = Math.max(0, Math.floor((now - lastSavedTime) / 1000));
+
+  let offlineFood = rawFood;
+  let offlineWater = rawWater;
+  if (elapsedSec > 0) {
+    const zeroDecayUntil = parsed.zeroDecayUntil || 0;
+    const zeroSec = zeroDecayUntil > lastSavedTime 
+      ? Math.max(0, Math.min(elapsedSec, Math.floor((zeroDecayUntil - lastSavedTime) / 1000)))
+      : 0;
+    const decaySec = Math.max(0, elapsedSec - zeroSec);
+
+    if (decaySec > 0) {
+      const naturalRate = 100 / 2700; // Tiêu hao tự nhiên nhẹ nhàng: 100% trong 45 phút (~0.037%/s)
+      let foodRate = naturalRate;
+      let waterRate = naturalRate;
+
+      if (parsed.satietyExpiresAt && parsed.satietyExpiresAt > lastSavedTime) {
+        if (typeof parsed.satietyFoodRate === 'number' && parsed.satietyFoodRate > 0) {
+          foodRate = parsed.satietyFoodRate;
+        } else if (parsed.satietyFoodTier === 'high') {
+          foodRate = 0.005;
+        } else if (parsed.satietyFoodTier === 'mid') {
+          foodRate = 0.02;
+        } else {
+          foodRate = 0.045;
+        }
+
+        if (typeof parsed.satietyWaterRate === 'number' && parsed.satietyWaterRate > 0) {
+          waterRate = parsed.satietyWaterRate;
+        } else if (parsed.satietyFoodTier === 'high') {
+          waterRate = 0.004;
+        } else if (parsed.satietyFoodTier === 'mid') {
+          waterRate = 0.015;
+        } else {
+          waterRate = 0.04;
+        }
+
+        if (parsed.satietyDecayReduction && parsed.satietyDecayReduction < 1) {
+          foodRate *= parsed.satietyDecayReduction;
+          waterRate *= parsed.satietyDecayReduction;
+        }
+      }
+
+      const foodLoss = foodRate * decaySec;
+      const waterLoss = waterRate * decaySec;
+      offlineFood = Math.max(0, Math.round((rawFood - foodLoss) * 100) / 100);
+      offlineWater = Math.max(0, Math.round((rawWater - waterLoss) * 100) / 100);
+    }
+  }
+
+  return {
+    version: parsed.version || 2,
+    fish: coinAmount,
+    coins: coinAmount,
+    xp: totalXp,
+    level,
+    fishBasket: Array.isArray(parsed.fishBasket)
+      ? parsed.fishBasket.map((f: any) => {
+          if (f && (f.name === 'Cá Vàng May Mắn' || f.instanceId?.startsWith('golden_')) && f.weightKg > 1) {
+            return { ...f, weightKg: +(0.3 + Math.random() * 0.5).toFixed(1) };
+          }
+          return f;
+        })
+      : [],
+    biggestFishKg: Math.max(0, Number(parsed.biggestFishKg) || 0),
+    totalFishCaught: Math.max(0, Number(parsed.totalFishCaught) || 0),
+    totalCoinsEarned: Math.max(coinAmount, Number(parsed.totalCoinsEarned) || coinAmount),
+    totalFish: Math.max(0, Number(parsed.totalFish) || coinAmount),
+    highestFish: Math.max(0, Number(parsed.highestFish) || coinAmount),
+    totalClicks: Math.max(0, Number(parsed.totalClicks) || 0),
+    upgrades: { ...DEFAULT_SAVE_DATA.upgrades, ...(parsed.upgrades || {}) },
+    unlockedSkins: Array.isArray(parsed.unlockedSkins) && parsed.unlockedSkins.length > 0 
+      ? parsed.unlockedSkins 
+      : ['orange_tabby'],
+    equippedSkin: parsed.equippedSkin || 'orange_tabby',
+    food: offlineFood,
+    water: offlineWater,
+    foodInventory: typeof parsed.foodInventory === 'object' && parsed.foodInventory !== null
+      ? parsed.foodInventory
+      : DEFAULT_SAVE_DATA.foodInventory,
+    activeMealPlan: parsed.activeMealPlan || null,
+    equippedRodId: parsed.equippedRodId || 'wood_rod',
+    rodDurability: typeof parsed.rodDurability === 'number' ? Math.max(0, parsed.rodDurability) : 10,
+    unlockedRods: Array.isArray(parsed.unlockedRods) && parsed.unlockedRods.length > 0
+      ? parsed.unlockedRods
+      : ['wood_rod'],
+    satietyExpiresAt: typeof parsed.satietyExpiresAt === 'number' ? parsed.satietyExpiresAt : 0,
+    satietyTotalDurationMs: typeof parsed.satietyTotalDurationMs === 'number' ? parsed.satietyTotalDurationMs : 0,
+    zeroDecayUntil: typeof parsed.zeroDecayUntil === 'number' ? parsed.zeroDecayUntil : 0,
+    satietyDecayReduction: typeof parsed.satietyDecayReduction === 'number' ? parsed.satietyDecayReduction : 1.0,
+    satietyFoodName: typeof parsed.satietyFoodName === 'string' ? parsed.satietyFoodName : '',
+    satietyFoodTier: parsed.satietyFoodTier || 'low',
+    satietyFoodRate: typeof parsed.satietyFoodRate === 'number' ? parsed.satietyFoodRate : 100 / 2700,
+    satietyWaterRate: typeof parsed.satietyWaterRate === 'number' ? parsed.satietyWaterRate : 100 / 2700,
+    ownedHats: Array.isArray(parsed.ownedHats) ? parsed.ownedHats : [],
+    equippedHat: parsed.equippedHat || '',
+    ownedClothes: Array.isArray(parsed.ownedClothes) ? parsed.ownedClothes : [],
+    equippedClothes: parsed.equippedClothes || '',
+    ownedRoomDecor: Array.isArray(parsed.ownedRoomDecor) ? parsed.ownedRoomDecor : DEFAULT_SAVE_DATA.ownedRoomDecor,
+    equippedDecor: {
+      bowl: parsed.equippedDecor?.bowl || 'bowl_clay',
+      ball: parsed.equippedDecor?.ball || 'ball_yarn_red',
+      balls: Array.isArray(parsed.equippedDecor?.balls) && parsed.equippedDecor.balls.length > 0
+        ? parsed.equippedDecor.balls.slice(0, 3)
+        : [parsed.equippedDecor?.ball || 'ball_yarn_red'],
+      rug: parsed.equippedDecor?.rug || 'rug_peach',
+      room: parsed.equippedDecor?.room || 'room_go_co_dien',
+    },
+    decorPositions: parsed.decorPositions || {},
+    hatTransforms: parsed.hatTransforms || {},
+    lastWaterGiftClaimedAt: typeof parsed.lastWaterGiftClaimedAt === 'number' ? parsed.lastWaterGiftClaimedAt : 0,
+    catName: parsed.catName || (parsed as any).displayName || DEFAULT_SAVE_DATA.catName,
+    catAvatar: parsed.catAvatar || (parsed as any).photoURL || DEFAULT_SAVE_DATA.catAvatar,
+    username: parsed.username || DEFAULT_SAVE_DATA.username,
+    settings: { ...DEFAULT_SAVE_DATA.settings, ...(parsed.settings || {}) },
+    achievements: Array.isArray(parsed.achievements) ? parsed.achievements : [],
+    lastSaved: Date.now(),
+  };
+}
+
+/**
  * Loads game state from localStorage with safe fallback
  */
 export function loadGame(): GameSaveData {
@@ -139,38 +304,7 @@ export function loadGame(): GameSaveData {
     if (!raw) return { ...DEFAULT_SAVE_DATA, lastSaved: Date.now() };
 
     const parsed = JSON.parse(raw) as Partial<GameSaveData>;
-    const coinAmount = Math.max(0, Number(parsed.fish ?? parsed.coins) || 0);
-
-    return {
-      version: parsed.version || 2,
-      fish: coinAmount,
-      coins: coinAmount,
-      xp: Math.max(0, Number(parsed.xp) || 0),
-      level: Math.max(1, Number(parsed.level) || 1),
-      fishBasket: Array.isArray(parsed.fishBasket) ? parsed.fishBasket : [],
-      biggestFishKg: Math.max(0, Number(parsed.biggestFishKg) || 0),
-      totalFishCaught: Math.max(0, Number(parsed.totalFishCaught) || 0),
-      totalCoinsEarned: Math.max(coinAmount, Number(parsed.totalCoinsEarned) || coinAmount),
-      totalFish: Math.max(0, Number(parsed.totalFish) || coinAmount),
-      highestFish: Math.max(0, Number(parsed.highestFish) || coinAmount),
-      totalClicks: Math.max(0, Number(parsed.totalClicks) || 0),
-      upgrades: { ...DEFAULT_SAVE_DATA.upgrades, ...(parsed.upgrades || {}) },
-      unlockedSkins: Array.isArray(parsed.unlockedSkins) && parsed.unlockedSkins.length > 0 
-        ? parsed.unlockedSkins 
-        : ['orange_tabby'],
-      equippedSkin: parsed.equippedSkin || 'orange_tabby',
-      food: typeof parsed.food === 'number' ? Math.min(100, Math.max(0, parsed.food)) : 100,
-      water: typeof parsed.water === 'number' ? Math.min(100, Math.max(0, parsed.water)) : 100,
-      foodInventory: typeof parsed.foodInventory === 'object' && parsed.foodInventory !== null
-        ? parsed.foodInventory
-        : { fresh_water: 3, dry_kibbles: 2 },
-      activeMealPlan: parsed.activeMealPlan || null,
-      equippedRodId: parsed.equippedRodId || 'wood_rod',
-      rodDurability: typeof parsed.rodDurability === 'number' ? Math.max(0, parsed.rodDurability) : 10,
-      settings: { ...DEFAULT_SAVE_DATA.settings, ...(parsed.settings || {}) },
-      achievements: Array.isArray(parsed.achievements) ? parsed.achievements : [],
-      lastSaved: parsed.lastSaved || Date.now(),
-    };
+    return sanitizeSaveData(parsed);
   } catch (err) {
     console.error('Failed to load game from localStorage:', err);
     return { ...DEFAULT_SAVE_DATA, lastSaved: Date.now() };
@@ -179,8 +313,7 @@ export function loadGame(): GameSaveData {
 
 /**
  * Calculates offline earnings when returning to the game
- * Cap offline time at 8 hours (28,800 seconds)
- * 50% efficiency for idle offline time
+ * Cap offline time at 8 hours (28,800 seconds) for night sleep / long AFK
  */
 export function calculateOfflineProgress(
   lastSavedTimestamp: number,
@@ -199,9 +332,9 @@ export function calculateOfflineProgress(
     return { offlineSeconds: 0, offlineFish: 0 };
   }
 
-  // Giới hạn tối đa 3 giờ offline, hiệu suất 20% để chống lạm phát
-  const cappedSeconds = Math.min(elapsedSeconds, 3 * 3600);
-  const offlineFish = Math.floor(cappedSeconds * autoFishPerSecond * 0.2);
+  // Giới hạn tối đa 8 giờ offline (hỗ trợ cho ăn trước khi ngủ)
+  const cappedSeconds = Math.min(elapsedSeconds, 8 * 3600);
+  const offlineFish = Math.floor(cappedSeconds * autoFishPerSecond * 0.25);
 
   return {
     offlineSeconds: cappedSeconds,

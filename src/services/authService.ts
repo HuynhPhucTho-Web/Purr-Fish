@@ -7,7 +7,10 @@ import {
   onAuthStateChanged,
   type User,
 } from 'firebase/auth';
-import { auth } from './firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
+import { DEFAULT_SAVE_DATA, type GameSaveData } from '../utils/saveGame';
+import { calculateLevelFromTotalXp, getCatGrowthStage } from '../data/rankTiers';
 
 export interface UserProfileInfo {
   uid: string;
@@ -15,13 +18,28 @@ export interface UserProfileInfo {
   displayName: string;
   isAnonymous: boolean;
   photoURL?: string | null;
+  username?: string;
+  catName?: string;
 }
+
+export const CAT_AVATARS: string[] = [
+  '/images/cat_avatars_webp/avatar_01.webp',
+  '/images/cat_avatars_webp/avatar_02.webp',
+  '/images/cat_avatars_webp/avatar_03.webp',
+  '/images/cat_avatars_webp/avatar_04.webp',
+  '/images/cat_avatars_webp/avatar_05.webp',
+  '/images/cat_avatars_webp/avatar_06.webp',
+  '/images/cat_avatars_webp/avatar_07.webp',
+  '/images/cat_avatars_webp/avatar_08.webp',
+];
 
 export interface SimpleLocalUser {
   username: string;
   displayName: string;
+  catName?: string;
   pass: string;
   uid: string;
+  photoURL?: string;
   createdAt: number;
 }
 
@@ -47,12 +65,27 @@ function saveLocalUsers(users: Record<string, SimpleLocalUser>): void {
 
 export const authService = {
   /**
+   * Lấy danh sách tất cả tài khoản người chơi đã đăng ký trên máy
+   */
+  getAllLocalUsers(): SimpleLocalUser[] {
+    return Object.values(getLocalUsers());
+  },
+
+  /**
    * Đăng ký tài khoản đơn giản (Chỉ cần Tên tài khoản & Mật khẩu đơn giản)
    */
-  async registerSimpleAccount(username: string, pass: string, catName?: string): Promise<UserProfileInfo> {
+  async registerSimpleAccount(
+    username: string,
+    pass: string,
+    catName?: string,
+    chosenAvatar?: string,
+    initialSaveData?: GameSaveData
+  ): Promise<UserProfileInfo> {
     const cleanUser = username.trim().toLowerCase();
     const cleanPass = pass.trim();
-    const displayName = (catName && catName.trim()) ? catName.trim() : username.trim();
+    const finalCatName = (catName && catName.trim()) ? catName.trim() : 'Mèo Cưng';
+    const displayName = finalCatName;
+    const photoURL = chosenAvatar || CAT_AVATARS[0];
 
     if (!cleanUser || cleanUser.length < 3) {
       throw new Error('Tên tài khoản phải có ít nhất 3 ký tự!');
@@ -66,12 +99,41 @@ export const authService = {
       throw new Error('Tên tài khoản này đã tồn tại! Vui lòng chọn tên khác.');
     }
 
-    const uid = `usr_${cleanUser}_${Date.now().toString(36)}`;
+    let uid = '';
+
+    // Đăng ký trực tiếp với Firebase Auth để tài khoản được lưu trên Firebase
+    const emailSynthetic = `${cleanUser}@purrfish.com`;
+    const firebasePass = cleanPass.length >= 6 ? cleanPass : `${cleanPass}000000`.slice(0, 8);
+
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, emailSynthetic, firebasePass);
+      await updateProfile(cred.user, { displayName, photoURL });
+      uid = cred.user.uid;
+    } catch (err: any) {
+      if (err?.code === 'auth/email-already-in-use') {
+        try {
+          const cred = await signInWithEmailAndPassword(auth, emailSynthetic, firebasePass);
+          await updateProfile(cred.user, { displayName, photoURL });
+          uid = cred.user.uid;
+        } catch (loginErr: any) {
+          if (loginErr?.code === 'auth/wrong-password' || loginErr?.code === 'auth/invalid-credential') {
+            throw new Error('Tên tài khoản này đã có người đăng ký với mật khẩu khác! Vui lòng chọn tên khác.');
+          }
+          throw loginErr;
+        }
+      } else {
+        console.error('Firebase Auth error:', err);
+        throw new Error(err?.message || 'Lỗi đăng ký tài khoản trên Firebase!');
+      }
+    }
+
     const newEntry: SimpleLocalUser = {
       username: cleanUser,
       displayName,
+      catName: finalCatName,
       pass: cleanPass,
       uid,
+      photoURL,
       createdAt: Date.now(),
     };
     localUsers[cleanUser] = newEntry;
@@ -80,19 +142,55 @@ export const authService = {
     // Lưu phiên hiện tại
     localStorage.setItem(CURRENT_LOCAL_USER_KEY, JSON.stringify(newEntry));
 
-    // Thử đồng bộ ngầm với Firebase Auth nếu khả dụng
+    // Đồng bộ hồ sơ người dùng và TOÀN BỘ dữ liệu game vào Firebase Firestore theo rule /users/{userId}
+    const fullSaveData = initialSaveData || DEFAULT_SAVE_DATA;
     try {
-      const emailSynthetic = `${cleanUser}@purrfish.local`;
-      const cred = await createUserWithEmailAndPassword(auth, emailSynthetic, cleanPass.length >= 6 ? cleanPass : `${cleanPass}0000`);
-      await updateProfile(cred.user, { displayName });
-    } catch {
-      // Offline hoặc Firebase đã có email ảo tương tự, vẫn dùng tài khoản nội bộ mượt mà
+      const userRef = doc(db, 'users', uid);
+      await setDoc(userRef, {
+        ...fullSaveData,
+        uid,
+        username: cleanUser,
+        catName: finalCatName,
+        displayName: finalCatName,
+        catAvatar: photoURL,
+        photoURL,
+        createdAt: Date.now(),
+        lastLoginAt: Date.now(),
+        lastSaved: Date.now(),
+      }, { merge: true });
+
+      // Đồng bộ Bảng Xếp Hạng Firestore theo rule /leaderboards/{userId}
+      const levelInfo = calculateLevelFromTotalXp(fullSaveData.xp || 0);
+      const catStage = getCatGrowthStage(levelInfo.level);
+      const lbRef = doc(db, 'leaderboards', uid);
+      await setDoc(lbRef, {
+        uid,
+        displayName: finalCatName,
+        catName: finalCatName,
+        username: cleanUser,
+        photoURL,
+        level: Math.max(1, levelInfo.level),
+        xp: Math.max(0, fullSaveData.xp || 0),
+        rankTierKey: levelInfo.rankTier.key,
+        rankTierName: levelInfo.rankTier.name,
+        rankBadge: levelInfo.rankTier.badge,
+        coins: Math.max(0, Number(fullSaveData.fish ?? fullSaveData.coins) || 0),
+        biggestFishKg: Math.max(0, Number(fullSaveData.biggestFishKg) || 0),
+        equippedSkin: fullSaveData.equippedSkin || 'orange_tabby',
+        catStageLabel: catStage.label,
+        updatedAt: Date.now(),
+      }, { merge: true });
+    } catch (e) {
+      console.warn('Lỗi lưu profile và dữ liệu lên Firestore:', e);
     }
 
     return {
       uid,
-      email: `${cleanUser}@purrfish`,
-      displayName,
+      email: `${cleanUser}@purrfish.com`,
+      displayName: finalCatName,
+      catName: finalCatName,
+      username: cleanUser,
+      photoURL,
       isAnonymous: false,
     };
   },
@@ -103,46 +201,145 @@ export const authService = {
   async loginSimpleAccount(username: string, pass: string): Promise<UserProfileInfo> {
     const cleanUser = username.trim().toLowerCase();
     const cleanPass = pass.trim();
+    const emailSynthetic = `${cleanUser}@purrfish.com`;
+    const firebasePass = cleanPass.length >= 6 ? cleanPass : `${cleanPass}000000`.slice(0, 8);
 
     const localUsers = getLocalUsers();
     const target = localUsers[cleanUser];
 
-    if (!target) {
-      // Thử đăng nhập Firebase nếu là tài khoản tạo trước đó
-      try {
-        const emailSynthetic = `${cleanUser}@purrfish.local`;
-        const cred = await signInWithEmailAndPassword(auth, emailSynthetic, cleanPass.length >= 6 ? cleanPass : `${cleanPass}0000`);
-        return {
-          uid: cred.user.uid,
-          email: cred.user.email,
-          displayName: cred.user.displayName || cleanUser,
-          isAnonymous: false,
-        };
-      } catch {
-        throw new Error('Tài khoản không tồn tại! Hãy kiểm tra lại hoặc Đăng Ký Mới.');
+    let uid = target?.uid || '';
+    let displayName = target?.displayName || cleanUser;
+    let photoURL = target?.photoURL || CAT_AVATARS[0];
+
+    // Ưu tiên đăng nhập vào Firebase Auth
+    try {
+      const cred = await signInWithEmailAndPassword(auth, emailSynthetic, firebasePass);
+      uid = cred.user.uid;
+      displayName = cred.user.displayName || displayName;
+      photoURL = cred.user.photoURL || photoURL;
+    } catch (err: any) {
+      if (err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-credential') {
+        throw new Error('Mật khẩu không chính xác!');
+      }
+      if (!target) {
+        if (err?.code === 'auth/user-not-found') {
+          throw new Error('Tài khoản không tồn tại trên hệ thống! Vui lòng chọn Tạo Mới.');
+        }
+        throw new Error(err?.message || 'Đăng nhập Firebase thất bại!');
+      }
+      if (target.pass !== cleanPass) {
+        throw new Error('Mật khẩu không chính xác!');
       }
     }
 
-    if (target.pass !== cleanPass) {
-      throw new Error('Mật khẩu không chính xác!');
-    }
-
-    localStorage.setItem(CURRENT_LOCAL_USER_KEY, JSON.stringify(target));
-
-    // Thử đồng bộ phiên Firebase
-    try {
-      const emailSynthetic = `${cleanUser}@purrfish.local`;
-      await signInWithEmailAndPassword(auth, emailSynthetic, cleanPass.length >= 6 ? cleanPass : `${cleanPass}0000`);
-    } catch {
-      // Tiếp tục với tài khoản local
-    }
+    const updatedEntry: SimpleLocalUser = {
+      username: cleanUser,
+      displayName,
+      pass: cleanPass,
+      uid,
+      photoURL,
+      createdAt: target?.createdAt || Date.now(),
+    };
+    localUsers[cleanUser] = updatedEntry;
+    saveLocalUsers(localUsers);
+    localStorage.setItem(CURRENT_LOCAL_USER_KEY, JSON.stringify(updatedEntry));
 
     return {
-      uid: target.uid,
-      email: `${cleanUser}@purrfish`,
-      displayName: target.displayName,
+      uid,
+      email: `${cleanUser}@purrfish.com`,
+      displayName,
+      catName: target?.catName || displayName,
+      username: cleanUser,
+      photoURL,
       isAnonymous: false,
     };
+  },
+
+  /**
+   * Đổi ảnh đại diện Avatar người chơi
+   */
+  async updateUserAvatar(photoURL: string): Promise<void> {
+    try {
+      localStorage.setItem('PURR_FISH_AVATAR', photoURL);
+    } catch {}
+
+    try {
+      if (auth.currentUser) {
+        await updateProfile(auth.currentUser, { photoURL });
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        await setDoc(userRef, { photoURL }, { merge: true });
+        const lbRef = doc(db, 'leaderboards', auth.currentUser.uid);
+        await setDoc(lbRef, { photoURL, updatedAt: Date.now() }, { merge: true });
+      }
+    } catch {}
+
+    try {
+      const raw = localStorage.getItem(CURRENT_LOCAL_USER_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as SimpleLocalUser;
+        parsed.photoURL = photoURL;
+        localStorage.setItem(CURRENT_LOCAL_USER_KEY, JSON.stringify(parsed));
+
+        const localUsers = getLocalUsers();
+        if (localUsers[parsed.username]) {
+          localUsers[parsed.username].photoURL = photoURL;
+          saveLocalUsers(localUsers);
+        }
+      }
+    } catch {}
+  },
+
+  /**
+   * Đổi tên Mèo Cưng / Tên hiển thị người chơi
+   */
+  async updateCatName(newName: string): Promise<string> {
+    const cleanName = newName.trim();
+    if (!cleanName || cleanName.length < 2) {
+      throw new Error('Tên mèo phải có ít nhất 2 ký tự!');
+    }
+    if (cleanName.length > 30) {
+      throw new Error('Tên mèo không được vượt quá 30 ký tự!');
+    }
+
+    try {
+      if (auth.currentUser) {
+        await updateProfile(auth.currentUser, { displayName: cleanName });
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        await setDoc(userRef, {
+          catName: cleanName,
+          displayName: cleanName,
+          lastSaved: Date.now(),
+        }, { merge: true });
+
+        const lbRef = doc(db, 'leaderboards', auth.currentUser.uid);
+        await setDoc(lbRef, {
+          displayName: cleanName,
+          catName: cleanName,
+          updatedAt: Date.now(),
+        }, { merge: true });
+      }
+    } catch (err) {
+      console.warn('Lỗi cập nhật tên trên Firestore:', err);
+    }
+
+    try {
+      const raw = localStorage.getItem(CURRENT_LOCAL_USER_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as SimpleLocalUser;
+        parsed.displayName = cleanName;
+        parsed.catName = cleanName;
+        localStorage.setItem(CURRENT_LOCAL_USER_KEY, JSON.stringify(parsed));
+
+        const localUsers = getLocalUsers();
+        if (localUsers[parsed.username]) {
+          localUsers[parsed.username].displayName = cleanName;
+          localUsers[parsed.username].catName = cleanName;
+          saveLocalUsers(localUsers);
+        }
+      }
+    } catch {}
+
+    return cleanName;
   },
 
   /**
@@ -226,16 +423,20 @@ export const authService = {
    */
   onAuthStateChanged(callback: (user: UserProfileInfo | null) => void) {
     // 1. Kiểm tra local session trước
-    const checkLocal = () => {
+    const checkLocal = (): UserProfileInfo | null => {
+      const savedAvatar = localStorage.getItem('PURR_FISH_AVATAR');
       try {
         const raw = localStorage.getItem(CURRENT_LOCAL_USER_KEY);
         if (raw) {
           const parsed = JSON.parse(raw) as SimpleLocalUser;
           return {
             uid: parsed.uid,
-            email: `${parsed.username}@purrfish`,
+            email: `${parsed.username}@purrfish.com`,
             displayName: parsed.displayName,
+            catName: parsed.catName || parsed.displayName,
+            username: parsed.username,
             isAnonymous: parsed.username.startsWith('guest_'),
+            photoURL: parsed.photoURL || savedAvatar || CAT_AVATARS[0],
           };
         }
       } catch {
@@ -250,12 +451,19 @@ export const authService = {
     }
 
     return onAuthStateChanged(auth, (user: User | null) => {
+      const savedAvatar = localStorage.getItem('PURR_FISH_AVATAR');
       if (user) {
+        const local = checkLocal();
+        const cleanUser = user.email ? user.email.replace('@purrfish.com', '') : (local?.username || '');
+        const catName = user.displayName || local?.catName || local?.displayName || 'Mèo Cưng';
         callback({
           uid: user.uid,
           email: user.email,
-          displayName: user.displayName || 'Sen Nuôi Mèo',
+          displayName: catName,
+          catName,
+          username: cleanUser,
           isAnonymous: user.isAnonymous,
+          photoURL: user.photoURL || savedAvatar || CAT_AVATARS[0],
         });
       } else {
         const local = checkLocal();
@@ -268,28 +476,37 @@ export const authService = {
    * Lấy User hiện tại
    */
   getCurrentUser(): UserProfileInfo | null {
+    const savedAvatar = localStorage.getItem('PURR_FISH_AVATAR');
     const user = auth.currentUser;
+    const raw = localStorage.getItem(CURRENT_LOCAL_USER_KEY);
+    let local: SimpleLocalUser | null = null;
+    try {
+      if (raw) local = JSON.parse(raw) as SimpleLocalUser;
+    } catch {}
+
     if (user) {
+      const cleanUser = user.email ? user.email.replace('@purrfish.com', '') : (local?.username || '');
+      const catName = user.displayName || local?.catName || local?.displayName || 'Mèo Cưng';
       return {
         uid: user.uid,
         email: user.email,
-        displayName: user.displayName || 'Sen Nuôi Mèo',
+        displayName: catName,
+        catName,
+        username: cleanUser,
         isAnonymous: user.isAnonymous,
+        photoURL: user.photoURL || savedAvatar || CAT_AVATARS[0],
       };
     }
-    try {
-      const raw = localStorage.getItem(CURRENT_LOCAL_USER_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as SimpleLocalUser;
-        return {
-          uid: parsed.uid,
-          email: `${parsed.username}@purrfish`,
-          displayName: parsed.displayName,
-          isAnonymous: parsed.username.startsWith('guest_'),
-        };
-      }
-    } catch {
-      // ignore
+    if (local) {
+      return {
+        uid: local.uid,
+        email: `${local.username}@purrfish.com`,
+        displayName: local.displayName,
+        catName: local.catName || local.displayName,
+        username: local.username,
+        isAnonymous: local.username.startsWith('guest_'),
+        photoURL: local.photoURL || savedAvatar || CAT_AVATARS[0],
+      };
     }
     return null;
   },

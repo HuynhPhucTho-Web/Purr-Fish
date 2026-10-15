@@ -101,7 +101,7 @@ export const FreeWaterGiftButton: React.FC<FreeWaterGiftButtonProps> = ({
         <div className="flex flex-col text-left leading-none">
           <div className="flex items-center gap-1">
             <span className="text-[11px] font-black tracking-tight">
-              {isReady ? 'Quà Nước 5x' : 'Quà Nước'}
+              {isReady ? 'Quà Nước 2x' : 'Quà Nước'}
             </span>
             {isReady && (
               <span className="bg-yellow-300 text-yellow-950 text-[9px] font-extrabold px-1 rounded-full uppercase">

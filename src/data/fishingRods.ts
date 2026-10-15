@@ -4,6 +4,8 @@ export interface FishingRod {
   icon: string;
   image: string;            // Ảnh đại diện webp từ public/images/can_cau_webp
   price: number;
+  repairPrice: number;      // Giá sửa cần câu khi hỏng (set trực tiếp trong data)
+  repairCost?: number;      // Alias tương thích
   maxDurability: number;
   castSpeed: number;        // Tốc độ cần câu đồng nhất
   lineSpeed: number;        // Tốc độ ra/phóng dây câu (càng xịn ra dây càng nhanh)
@@ -22,7 +24,9 @@ export const FISHING_RODS_CATALOG: FishingRod[] = [
     name: 'Cần Câu Gỗ',
     icon: '🪵',
     image: '/images/can_cau_webp/01_can-cau-go.webp',
-    price: 0,
+    price: 500,
+    repairPrice: 250,
+    repairCost: 25,
     maxDurability: 10,
     castSpeed: 1.0,
     lineSpeed: 0.7,
@@ -39,7 +43,9 @@ export const FISHING_RODS_CATALOG: FishingRod[] = [
     name: 'Cần Máy Đen',
     icon: '🎣',
     image: '/images/can_cau_webp/02_can-cau-may-den.webp',
-    price: 220,
+    price: 2000,
+    repairPrice: 1000,
+    repairCost: 250,
     maxDurability: 18,
     castSpeed: 1.0,
     lineSpeed: 0.9,
@@ -56,7 +62,9 @@ export const FISHING_RODS_CATALOG: FishingRod[] = [
     name: 'Cần Câu Tre',
     icon: '🎋',
     image: '/images/can_cau_webp/03_can-cau-tre.webp',
-    price: 550,
+    price: 10000,
+    repairPrice: 5500,
+    repairCost: 2500,
     maxDurability: 30,
     castSpeed: 1.0,
     lineSpeed: 1.15,
@@ -73,7 +81,9 @@ export const FISHING_RODS_CATALOG: FishingRod[] = [
     name: 'Cần Máy Bạc',
     icon: '⚙️',
     image: '/images/can_cau_webp/04_can-cau-may-bac.webp',
-    price: 1400,
+    price: 20000,
+    repairPrice: 8000,
+    repairCost: 5000,
     maxDurability: 45,
     castSpeed: 1.0,
     lineSpeed: 1.45,
@@ -90,7 +100,9 @@ export const FISHING_RODS_CATALOG: FishingRod[] = [
     name: 'Cần Hoàng Gia',
     icon: '👑',
     image: '/images/can_cau_webp/05_can-cau-hoang-gia.webp',
-    price: 3600,
+    price: 30000,
+    repairPrice: 15000,
+    repairCost: 7500,
     maxDurability: 65,
     castSpeed: 1.0,
     lineSpeed: 1.75,
@@ -107,7 +119,9 @@ export const FISHING_RODS_CATALOG: FishingRod[] = [
     name: 'Cần Cầu Vồng',
     icon: '🌈',
     image: '/images/can_cau_webp/06_can-cau-cau-vong.webp',
-    price: 8800,
+    price: 95000,
+    repairPrice: 23750,
+    repairCost: 55000,
     maxDurability: 95,
     castSpeed: 1.0,
     lineSpeed: 2.2,
@@ -135,4 +149,15 @@ export function getRodById(id?: string): FishingRod {
   if (id === '06_can-cau-cau-vong' || id === 'rainbow' || id === 'cyber') return FISHING_RODS_CATALOG[5];
 
   return FISHING_RODS_CATALOG[0];
+}
+
+/**
+ * Lấy phí sửa chữa của cần câu (lấy trực tiếp từ field rod.repairPrice / rod.repairCost).
+ * Có fallback nếu dữ liệu truyền vào chưa có trường này.
+ */
+export function getRodRepairCost(rod?: FishingRod | null): number {
+  if (!rod) return 0;
+  if (typeof rod.repairPrice === 'number') return rod.repairPrice;
+  if (typeof rod.repairCost === 'number') return rod.repairCost;
+  return rod.price > 0 ? Math.max(25, Math.round(rod.price * 0.25)) : 0;
 }

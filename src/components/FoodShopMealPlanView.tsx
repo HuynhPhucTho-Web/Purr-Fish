@@ -24,6 +24,8 @@ interface FoodShopMealPlanViewProps {
     restoredFood: number;
     restoredWater: number;
     gainedXp: number;
+    satietyMinutesAdded?: number;
+    satietyDecayReduction?: number;
   };
   onBuyMealPlan: (plan: MealPlan) => boolean;
   onBackToCat: () => void;
@@ -41,6 +43,7 @@ export const FoodShopMealPlanView: React.FC<FoodShopMealPlanViewProps> = ({
   onBackToCat,
 }) => {
   const [subTab, setSubTab] = useState<'individual' | 'inventory' | 'mealPlans'>('individual');
+  const [tierFilter, setTierFilter] = useState<'all' | 'low' | 'mid' | 'high'>('all');
   const [purchaseQuantity, setPurchaseQuantity] = useState<number>(1);
   const [selectedFeedItem, setSelectedFeedItem] = useState<FoodItem>(FOOD_SHOP_CATALOG[0]);
   const [feedQuantity, setFeedQuantity] = useState<number>(1);
@@ -48,7 +51,7 @@ export const FoodShopMealPlanView: React.FC<FoodShopMealPlanViewProps> = ({
 
   const showToast = (msg: string) => {
     setFeedbackToast(msg);
-    setTimeout(() => setFeedbackToast(null), 3000);
+    setTimeout(() => setFeedbackToast(null), 3500);
   };
 
   const totalInventoryCount = Object.values(foodInventory).reduce(
@@ -56,12 +59,30 @@ export const FoodShopMealPlanView: React.FC<FoodShopMealPlanViewProps> = ({
     0
   );
 
-  // Helper: Độ đắt / Phẩm cấp thức ăn
-  const getFoodTierLabel = (price: number) => {
-    if (price < 100) return { label: 'Bình Dân 🥣', color: '#9CA3AF', bonus: '1.0x' };
-    if (price < 500) return { label: 'Hảo Hạng 🐟', color: '#10B981', bonus: '1.15x' };
-    if (price < 3000) return { label: 'Thượng Hạng 🥫', color: '#3B82F6', bonus: '1.6x' };
-    return { label: 'Đế Vương Xa Xỉ 👑', color: '#EC4899', bonus: '2.5x' };
+  // Helper: Phân loại món ăn theo cấp độ (Cấp Thấp, Cấp Trung, Cao Cấp)
+  const getFoodTierLabel = (item: FoodItem) => {
+    if (item.tier === 'low') {
+      return {
+        label: 'Cấp Thấp 🟢',
+        badge: 'Active',
+        color: '#10B981',
+        desc: 'Online liên tục / Chăm sóc thủ công',
+      };
+    }
+    if (item.tier === 'mid') {
+      return {
+        label: 'Cấp Trung 🔵',
+        badge: 'Kèm Buff',
+        color: '#3B82F6',
+        desc: 'Buff đói 0% ban đầu & tiêu hóa êm',
+      };
+    }
+    return {
+      label: 'Cao Cấp 🟣',
+      badge: 'AFK / Ngủ',
+      color: '#8B5CF6',
+      desc: 'Treo máy / Cho ăn trước khi ngủ',
+    };
   };
 
   const handleBuyToInventory = (item: FoodItem) => {
@@ -88,8 +109,11 @@ export const FoodShopMealPlanView: React.FC<FoodShopMealPlanViewProps> = ({
 
     const res = onFeedFromInventory(item, qty);
     if (res.success) {
+      const satietyMins = res.satietyMinutesAdded || (item.satietyMinutes || 8) * qty;
+      const durationText = satietyMins >= 60 ? `${Math.round(satietyMins / 60)} giờ` : `${satietyMins} phút`;
+      const zeroText = item.zeroDecayMinutes ? ` (🛡️ 0% hao hụt ${item.zeroDecayMinutes * qty}p đầu)` : '';
       showToast(
-        `😋 Mèo chén no nê ${qty}x ${item.name}! (+${res.restoredFood}% no, +${res.restoredWater}% nước, +${formatNumber(res.gainedXp)} XP ⭐)`
+        `😋 Mèo chén no nê ${qty}x ${item.name}! (+${res.restoredFood}% no, duy trì ${durationText}${zeroText}, +${formatNumber(res.gainedXp)} XP ⭐)`
       );
     }
   };
@@ -108,58 +132,60 @@ export const FoodShopMealPlanView: React.FC<FoodShopMealPlanViewProps> = ({
   };
 
   return (
-    <div className="view-page-container food-shop-meal-view">
+    <div className="view-page-container food-shop-meal-view pt-1 sm:pt-4 pb-20 sm:pb-24 max-w-xl mx-auto px-2 sm:px-4">
       {/* Header */}
-      <div className="view-header-bar">
-        <div className="view-title-wrap">
-          <span className="view-title-icon">🥫</span>
-          <div>
-            <h2 className="view-title">Thực Đơn, Túi Thức Ăn & Dinh Dưỡng</h2>
-            <p className="view-subtitle">Mua thức ăn theo số lượng, trữ vào túi và bồi dưỡng mèo cưng</p>
+      <div className="flex items-center justify-between gap-2 mb-2.5 sm:mb-3 bg-surface-container-lowest/90 backdrop-blur-md p-2.5 sm:p-3 rounded-2xl border border-outline-variant/30 shadow-2xs">
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          <span className="text-xl sm:text-2xl shrink-0">🥫</span>
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-lg font-black text-on-surface truncate">Thực Đơn Dinh Dưỡng</h2>
+            <p className="hidden sm:block text-[11px] sm:text-xs text-on-surface-variant line-clamp-1">Mua thức ăn trữ vào túi bồi dưỡng mèo cưng</p>
           </div>
         </div>
-        <button type="button" className="view-back-btn" onClick={onBackToCat} title="Quay lại phòng mèo">
+        <button
+          type="button"
+          className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full bg-surface-container-high hover:bg-surface-container text-primary font-bold text-xs shrink-0 cursor-pointer transition-all border border-outline-variant/30"
+          onClick={onBackToCat}
+          title="Quay lại phòng mèo"
+        >
           🐱 Về Mèo
         </button>
       </div>
 
-      {/* Pet Belly & Coins Status Row */}
-      <div className="food-status-cards-row">
-        {/* <div className="f-status-card coins-card">
-          <span className="f-stat-icon">🪙</span>
-          <div>
-            <span className="f-stat-label">Xu tích lũy</span>
-            <strong className="f-stat-val">{formatNumber(coins)}</strong>
-          </div>
-        </div> */}
-        <div className="f-status-card hunger-card">
-          <span className="f-stat-icon">🍖</span>
-          <div>
-            {/* <span className="f-stat-label">Độ No</span> */}
-            <strong className="f-stat-val">{Math.round(currentFood)}%</strong>
+      {/* Pet Belly & Bag Status Row - 3 ô đồng bộ 1 class */}
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-2.5 sm:mb-3">
+        <div className="h-12 sm:h-14 rounded-2xl bg-amber-50/80 border border-amber-200/70 shadow-2xs flex items-center justify-center gap-1.5 sm:gap-2 px-1.5 sm:px-2 text-center">
+          <span className="text-lg sm:text-xl">🍖</span>
+          <div className="flex flex-col text-left leading-tight">
+            <span className="text-[9px] sm:text-[10px] text-amber-800 font-bold">Độ No</span>
+            <strong className="text-xs sm:text-sm font-black text-amber-950">{Math.round(currentFood)}%</strong>
           </div>
         </div>
-        <div className="f-status-card thirst-card">
-          <span className="f-stat-icon">💧</span>
-          <div>
-            {/* <span className="f-stat-label">Độ Khát</span> */}
-            <strong className="f-stat-val">{Math.round(currentWater)}%</strong>
+        <div className="h-12 sm:h-14 rounded-2xl bg-sky-50/80 border border-sky-200/70 shadow-2xs flex items-center justify-center gap-1.5 sm:gap-2 px-1.5 sm:px-2 text-center">
+          <span className="text-lg sm:text-xl">💧</span>
+          <div className="flex flex-col text-left leading-tight">
+            <span className="text-[9px] sm:text-[10px] text-sky-800 font-bold">Độ Khát</span>
+            <strong className="text-xs sm:text-sm font-black text-sky-950">{Math.round(currentWater)}%</strong>
           </div>
         </div>
-        <div className="f-status-card bag-card">
-          <span className="f-stat-icon">🎒</span>
-          <div>
-            {/* <span className="f-stat-label">Túi Đồ Ăn</span> */}
-            <strong className="f-stat-val">{totalInventoryCount} món</strong>
+        <div className="h-12 sm:h-14 rounded-2xl bg-purple-50/80 border border-purple-200/70 shadow-2xs flex items-center justify-center gap-1.5 sm:gap-2 px-1.5 sm:px-2 text-center">
+          <span className="text-lg sm:text-xl">🎒</span>
+          <div className="flex flex-col text-left leading-tight">
+            <span className="text-[9px] sm:text-[10px] text-purple-800 font-bold">Túi Đồ</span>
+            <strong className="text-xs sm:text-sm font-black text-purple-950">{totalInventoryCount} món</strong>
           </div>
         </div>
       </div>
 
-      {/* Subtabs Switcher */}
-      <div className="view-subtabs-nav">
+      {/* Subtabs Switcher - Segmented Control 3 cột đều nhau */}
+      <div className="grid grid-cols-3 gap-0.5 sm:gap-1 p-0.5 sm:p-1 bg-gray-100/90 rounded-xl sm:rounded-2xl border border-gray-200/60 mb-2.5 sm:mb-3 select-none">
         <button
           type="button"
-          className={`subtab-btn ${subTab === 'individual' ? 'subtab-active' : ''}`}
+          className={`py-1.5 sm:py-2 px-0.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-black text-center transition-all cursor-pointer truncate ${
+            subTab === 'individual'
+              ? 'bg-white text-primary shadow-xs'
+              : 'text-gray-500 hover:text-gray-800'
+          }`}
           onClick={() => {
             soundManager.playPop();
             setSubTab('individual');
@@ -169,17 +195,25 @@ export const FoodShopMealPlanView: React.FC<FoodShopMealPlanViewProps> = ({
         </button>
         <button
           type="button"
-          className={`subtab-btn ${subTab === 'inventory' ? 'subtab-active' : ''}`}
+          className={`py-1.5 sm:py-2 px-0.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-black text-center transition-all cursor-pointer truncate ${
+            subTab === 'inventory'
+              ? 'bg-white text-primary shadow-xs'
+              : 'text-gray-500 hover:text-gray-800'
+          }`}
           onClick={() => {
             soundManager.playPop();
             setSubTab('inventory');
           }}
         >
-          🎒 Chi tiết món ({totalInventoryCount})
+          🎒 Túi Món ({totalInventoryCount})
         </button>
         <button
           type="button"
-          className={`subtab-btn ${subTab === 'mealPlans' ? 'subtab-active' : ''}`}
+          className={`py-1.5 sm:py-2 px-0.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-black text-center transition-all cursor-pointer truncate ${
+            subTab === 'mealPlans'
+              ? 'bg-white text-primary shadow-xs'
+              : 'text-gray-500 hover:text-gray-800'
+          }`}
           onClick={() => {
             soundManager.playPop();
             setSubTab('mealPlans');
@@ -219,87 +253,175 @@ export const FoodShopMealPlanView: React.FC<FoodShopMealPlanViewProps> = ({
             </div>
           </div>
 
+          {/* Tier Filter Capsule Pills */}
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar mb-3 py-1">
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer ${
+                tierFilter === 'all'
+                  ? 'bg-primary text-white shadow-xs'
+                  : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+              }`}
+              onClick={() => {
+                soundManager.playPop();
+                setTierFilter('all');
+              }}
+            >
+              Tất Cả ({FOOD_SHOP_CATALOG.length})
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer flex items-center gap-1 ${
+                tierFilter === 'low'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+              }`}
+              onClick={() => {
+                soundManager.playPop();
+                setTierFilter('low');
+              }}
+            >
+              <span>🟢</span>
+              <span>Cấp Thấp (Active)</span>
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer flex items-center gap-1 ${
+                tierFilter === 'mid'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-blue-50 text-blue-800 hover:bg-blue-100 border border-blue-200'
+              }`}
+              onClick={() => {
+                soundManager.playPop();
+                setTierFilter('mid');
+              }}
+            >
+              <span>🔵</span>
+              <span>Cấp Trung (Buff)</span>
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer flex items-center gap-1 ${
+                tierFilter === 'high'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200'
+              }`}
+              onClick={() => {
+                soundManager.playPop();
+                setTierFilter('high');
+              }}
+            >
+              <span>🟣</span>
+              <span>Cao Cấp (AFK)</span>
+            </button>
+          </div>
+
           {/* Food Cards Grid */}
-          <div className="food-catalog-grid">
-            {FOOD_SHOP_CATALOG.map((item) => {
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+            {FOOD_SHOP_CATALOG.filter((item) => tierFilter === 'all' || item.tier === tierFilter).map((item) => {
               const totalPrice = item.price * purchaseQuantity;
               const canAfford = coins >= totalPrice;
               const ownedCount = foodInventory[item.id] || 0;
-              const tierInfo = getFoodTierLabel(item.price);
+              const tierInfo = getFoodTierLabel(item);
               const richnessBonus = 1 + Math.min(1.5, item.price / 3000);
               const totalXp = Math.round(item.xpReward * purchaseQuantity * richnessBonus);
 
               return (
-                <div key={item.id} className="food-catalog-card">
-                  <div className="food-card-top-row">
-                    {item.image ? (
-                      <div className="w-12 h-12 rounded-xl bg-amber-50 p-1 flex items-center justify-center overflow-hidden border border-amber-200 shadow-2xs shrink-0">
-                        <img src={item.image} alt={item.name} className="w-full h-full object-contain drop-shadow-xs" />
+                <div
+                  key={item.id}
+                  className="bg-white rounded-2xl p-2.5 sm:p-3 border border-amber-100 shadow-xs flex flex-col justify-between h-full relative"
+                >
+                  {/* Top Row: Image & Badges */}
+                  <div>
+                    <div className="flex items-start justify-between gap-1 mb-2">
+                      {item.image ? (
+                        <div className="w-12 h-12 rounded-xl bg-amber-50/80 p-1 flex items-center justify-center overflow-hidden border border-amber-100 shadow-2xs shrink-0">
+                          <img src={item.image} alt={item.name} className="w-full h-full object-contain drop-shadow-xs" />
+                        </div>
+                      ) : (
+                        <span className="text-3xl shrink-0">{item.icon}</span>
+                      )}
+                      <div className="flex flex-col items-end gap-1">
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded-full font-bold text-white leading-none whitespace-nowrap"
+                          style={{ backgroundColor: tierInfo.color }}
+                        >
+                          {tierInfo.label}
+                        </span>
+                        <span className="text-[10px] text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded-full font-bold border border-amber-200/60 leading-none whitespace-nowrap">
+                          🎒 x{ownedCount}
+                        </span>
                       </div>
-                    ) : (
-                      <span className="food-icon-big">{item.icon}</span>
-                    )}
-                    <div className="food-badges-wrap">
-                      <span
-                        className="speed-growth-badge"
-                        style={{ backgroundColor: tierInfo.color }}
-                      >
-                        {tierInfo.label}
-                      </span>
-                      <span className="owned-inventory-badge">
-                        🎒 Đang có: <strong>x{ownedCount}</strong>
-                      </span>
                     </div>
-                  </div>
 
-                  <div className="food-card-body">
-                    <h4 className="food-name">{item.name}</h4>
-                    <p className="food-desc-text">{item.description}</p>
+                    {/* Food Name & Short Description */}
+                    <h4 className="text-xs sm:text-sm font-black text-gray-800 line-clamp-1 mb-0.5">{item.name}</h4>
+                    <p className="text-[11px] text-gray-500 line-clamp-2 min-h-[30px] leading-tight mb-2">
+                      {item.description}
+                    </p>
 
-                    <div className="food-stat-buffs">
+                    {/* Buff Tags */}
+                    <div className="flex flex-wrap gap-1 min-h-[36px] content-start mb-2">
                       {item.foodRestore > 0 && (
-                        <span className="f-buff-pill food-pill">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200/60">
                           +{item.foodRestore * purchaseQuantity}% No 🍖
                         </span>
                       )}
                       {item.waterRestore > 0 && (
-                        <span className="f-buff-pill water-pill">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200/60">
                           +{item.waterRestore * purchaseQuantity}% Nước 💧
                         </span>
                       )}
-                      <span className="f-buff-pill xp-pill" title={`Hệ số độ đắt ${tierInfo.bonus}`}>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200/60">
                         +{formatNumber(totalXp)} XP ⭐
                       </span>
+                      {item.buffDescription && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200/60">
+                          🛡️ {item.buffDescription}
+                        </span>
+                      )}
+                      {item.satietyBadgeLabel && (
+                        <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200/60">
+                          ⏳ {item.satietyBadgeLabel}
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  <div className="food-card-bottom-row">
-                    <div className="item-price-display">
-                      <span className="coin-sign">🪙</span>
-                      <strong className="item-cost-text">{formatNumber(totalPrice)}</strong>
+                  {/* Bottom Row: Price & Buy Button (Cố định dưới đáy) */}
+                  <div className="pt-2 border-t border-amber-100/70 mt-auto">
+                    <div className="flex items-baseline justify-between mb-1.5">
+                      <span className="text-xs font-black text-amber-900 flex items-center gap-0.5">
+                        <span>🪙</span>
+                        <span>{formatNumber(totalPrice)}</span>
+                      </span>
                       {purchaseQuantity > 1 && (
-                        <span className="cost-per-unit">({formatNumber(item.price)}/món)</span>
+                        <span className="text-[10px] text-gray-400">({formatNumber(item.price)}/món)</span>
                       )}
                     </div>
 
-                    <div className="food-card-actions-group">
+                    <div className="flex gap-1">
                       <button
                         type="button"
-                        className={`buy-food-submit-btn ${canAfford ? 'can-buy' : 'cannot-buy'}`}
+                        className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-black transition-all cursor-pointer text-center ${
+                          canAfford
+                            ? 'bg-primary text-white shadow-[0_2px_0_#842415] active:translate-y-0.5'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        }`}
                         onClick={() => handleBuyToInventory(item)}
                         disabled={!canAfford}
                       >
-                        {canAfford ? `Mua x${purchaseQuantity} 🛒` : 'Thiếu Xu'}
+                        {canAfford ? `Mua x${purchaseQuantity}` : 'Thiếu Xu'}
                       </button>
 
                       {ownedCount > 0 && (
                         <button
                           type="button"
-                          className="quick-feed-from-card-btn"
+                          className="py-1.5 px-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-black transition-all cursor-pointer"
                           onClick={() => handleFeedCat(item, 1)}
                           title="Cho mèo ăn ngay 1 món từ túi"
                         >
-                          Cho Ăn 🍽️
+                          Ăn 🍽️
                         </button>
                       )}
                     </div>
@@ -336,7 +458,7 @@ export const FoodShopMealPlanView: React.FC<FoodShopMealPlanViewProps> = ({
                   {FOOD_SHOP_CATALOG.filter((item) => (foodInventory[item.id] || 0) > 0).map((item) => {
                     const count = foodInventory[item.id] || 0;
                     const isSelected = selectedFeedItem.id === item.id;
-                    const tierInfo = getFoodTierLabel(item.price);
+                    const tierInfo = getFoodTierLabel(item);
 
                     return (
                       <div
@@ -452,6 +574,23 @@ export const FoodShopMealPlanView: React.FC<FoodShopMealPlanViewProps> = ({
                             +{formatNumber(totalXpGain)} XP (Độ đắt x{richnessBonus.toFixed(2)})
                           </strong>
                         </div>
+                        {selectedFeedItem.satietyMinutes && (
+                          <div className="breakdown-item" style={{ color: '#7E22CE' }}>
+                            <span>⏳ Thời gian duy trì no:</span>
+                            <strong>
+                              +{selectedFeedItem.satietyMinutes * feedQuantity >= 60
+                                ? `${Math.floor((selectedFeedItem.satietyMinutes * feedQuantity) / 60)}h ${(selectedFeedItem.satietyMinutes * feedQuantity) % 60}p`
+                                : `${selectedFeedItem.satietyMinutes * feedQuantity} phút`}
+                              {selectedFeedItem.zeroDecayMinutes ? ` (0% hao hụt ${selectedFeedItem.zeroDecayMinutes * feedQuantity}p đầu)` : ''}
+                            </strong>
+                          </div>
+                        )}
+                        {selectedFeedItem.buffDescription && (
+                          <div className="breakdown-item" style={{ color: '#2563EB' }}>
+                            <span>🛡️ Hiệu ứng buff:</span>
+                            <strong>{selectedFeedItem.buffDescription}</strong>
+                          </div>
+                        )}
                       </div>
 
                       <button

@@ -4,6 +4,7 @@ import {
   type FashionCategory,
   type FashionDecorItem,
   getFashionItemById,
+  getToyRewardConfig,
 } from '../data/fashionAndDecor';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
@@ -20,7 +21,9 @@ interface FashionShopModalProps {
   equippedDecor: {
     bowl?: string;
     ball?: string;
+    balls?: string[];
     rug?: string;
+    room?: string;
   };
   onBuyItem: (item: FashionDecorItem) => { success: boolean; message: string };
   onEquipItem: (item: FashionDecorItem) => boolean;
@@ -53,19 +56,45 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
 
   const isItemOwned = (item: FashionDecorItem): boolean => {
     if (item.price === 0) return true;
-    if (item.category === 'hats') return ownedHats.includes(item.id);
+    if (item.category === 'hats') {
+      if (ownedHats.includes(item.id)) return true;
+      if (item.id === 'hat_hai_tac' && ownedHats.includes('hat_pirate')) return true;
+      if (item.id === 'hat_phu_thuy' && ownedHats.includes('hat_wizard')) return true;
+      if (item.id === 'hat_len_xam' && ownedHats.includes('hat_warm_beanie')) return true;
+      if (item.id === 'hat_rong_vanh' && ownedHats.includes('hat_straw')) return true;
+      if (item.id === 'hat_vuong_mien_hoang_gia' && ownedHats.includes('hat_crown')) return true;
+      return false;
+    }
     if (item.category === 'clothes') return ownedClothes.includes(item.id);
+    if (item.category === 'rooms') return ownedRoomDecor.includes(item.id) || item.price === 0;
     return ownedRoomDecor.includes(item.id);
   };
 
   const isItemEquipped = (item: FashionDecorItem): boolean => {
-    if (item.category === 'hats') return equippedHat === item.id;
+    if (item.category === 'hats') {
+      if (equippedHat === item.id) return true;
+      if (item.id === 'hat_hai_tac' && equippedHat === 'hat_pirate') return true;
+      if (item.id === 'hat_phu_thuy' && equippedHat === 'hat_wizard') return true;
+      if (item.id === 'hat_len_xam' && equippedHat === 'hat_warm_beanie') return true;
+      if (item.id === 'hat_rong_vanh' && equippedHat === 'hat_straw') return true;
+      if (item.id === 'hat_vuong_mien_hoang_gia' && equippedHat === 'hat_crown') return true;
+      return false;
+    }
     if (item.category === 'clothes') return equippedClothes === item.id;
     if (item.category === 'bowls') return equippedDecor.bowl === item.id;
-    if (item.category === 'balls') return equippedDecor.ball === item.id;
+    if (item.category === 'balls') return equippedBallsList.includes(item.id);
     if (item.category === 'rugs') return equippedDecor.rug === item.id;
+    if (item.category === 'rooms') return (equippedDecor.room || 'room_go_co_dien') === item.id;
     return false;
   };
+
+  const equippedBallsList = (
+    equippedDecor.balls && equippedDecor.balls.length > 0
+      ? equippedDecor.balls
+      : equippedDecor.ball
+      ? [equippedDecor.ball]
+      : ['ball_yarn_red']
+  ).slice(0, 3);
 
   const handleAction = (item: FashionDecorItem) => {
     const owned = isItemOwned(item);
@@ -80,7 +109,17 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
     } else {
       const equipped = isItemEquipped(item);
       onEquipItem(item);
-      if (equipped && (item.category === 'hats' || item.category === 'clothes')) {
+      if (item.category === 'balls') {
+        if (equipped) {
+          if (equippedBallsList.length > 1) {
+            showToast(`Đã tháo đồ chơi ${item.name}!`);
+          } else {
+            showToast(`Cần giữ ít nhất 1 đồ chơi trong phòng!`);
+          }
+        } else {
+          showToast(`Đã gắn ${item.name} lên phòng mèo (${Math.min(3, equippedBallsList.length + 1)}/3)! 🎾`);
+        }
+      } else if (equipped && (item.category === 'hats' || item.category === 'clothes')) {
         showToast(`Đã tháo ${item.name}!`);
       } else {
         showToast(`Đã trang bị ${item.name}! `);
@@ -91,7 +130,7 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
   const curHatObj = getFashionItemById(equippedHat);
   const curClothesObj = getFashionItemById(equippedClothes);
   const curBowlObj = getFashionItemById(equippedDecor.bowl);
-  const curBallObj = getFashionItemById(equippedDecor.ball);
+  const curRoomObj = getFashionItemById(equippedDecor?.room || 'room_go_co_dien');
 
   return (
     <div
@@ -154,11 +193,14 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
             </span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            <span className="px-2.5 py-0.5 rounded-full bg-surface-container-lowest border border-outline-variant/30 text-amber-800 font-bold">
+              🏡 {curRoomObj?.name || 'Phòng Gỗ'}
+            </span>
             <span className="px-2 py-0.5 rounded-full bg-surface-container-lowest border border-outline-variant/30 text-secondary font-bold">
               🥣 {curBowlObj?.name || 'Máng mộc'}
             </span>
             <span className="px-2 py-0.5 rounded-full bg-surface-container-lowest border border-outline-variant/30 text-primary font-bold">
-              🎾 {curBallObj?.name || 'Cuộn len'}
+              🎾 Đồ chơi ({equippedBallsList.length}/3)
             </span>
           </div>
         </div>
@@ -200,6 +242,38 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
           <button
             type="button"
             className={`flex-1 min-w-[76px] py-1.5 px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-0.5 transition-all cursor-pointer ${
+              activeTab === 'rooms'
+                ? 'bg-primary text-on-primary shadow-xs'
+                : 'text-on-surface-variant hover:text-on-surface'
+            }`}
+            onClick={() => {
+              soundManager.playPop();
+              setActiveTab('rooms');
+            }}
+          >
+            <span className="text-base">🏡</span>
+            <span>Phòng Nền</span>
+          </button>
+
+          <button
+            type="button"
+            className={`flex-1 min-w-[76px] py-1.5 px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-0.5 transition-all cursor-pointer ${
+              activeTab === 'rugs'
+                ? 'bg-primary text-on-primary shadow-xs'
+                : 'text-on-surface-variant hover:text-on-surface'
+            }`}
+            onClick={() => {
+              soundManager.playPop();
+              setActiveTab('rugs');
+            }}
+          >
+            <span className="text-base">🌸</span>
+            <span>Thảm Sảnh</span>
+          </button>
+
+          <button
+            type="button"
+            className={`flex-1 min-w-[76px] py-1.5 px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-0.5 transition-all cursor-pointer ${
               activeTab === 'bowls'
                 ? 'bg-primary text-on-primary shadow-xs'
                 : 'text-on-surface-variant hover:text-on-surface'
@@ -228,29 +302,20 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
             <span className="text-base">🎾</span>
             <span>Banh Đồ Chơi</span>
           </button>
-
-          <button
-            type="button"
-            className={`flex-1 min-w-[76px] py-1.5 px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-0.5 transition-all cursor-pointer ${
-              activeTab === 'rugs'
-                ? 'bg-primary text-on-primary shadow-xs'
-                : 'text-on-surface-variant hover:text-on-surface'
-            }`}
-            onClick={() => {
-              soundManager.playPop();
-              setActiveTab('rugs');
-            }}
-          >
-            <span className="text-base">🌸</span>
-            <span>Thảm Sảnh</span>
-          </button>
         </div>
 
         {/* 4. Items Grid Container */}
         <div className="flex-1 overflow-y-auto p-3.5 flex flex-col gap-2.5">
+          {activeTab === 'rooms' && (
+            <div className="bg-amber-50 text-amber-900 border border-amber-200 text-[11px] font-bold p-2.5 rounded-xl flex items-center gap-2">
+              <span className="text-base">🏡</span>
+              <span>Căn phòng nền background tuyệt đẹp tạo không gian sống động cho sảnh phòng chính!</span>
+            </div>
+          )}
+
           {activeTab === 'bowls' && (
             <div className="bg-amber-50 text-amber-900 border border-amber-200 text-[11px] font-bold p-2.5 rounded-xl flex items-center gap-2">
-              <span className="text-base"></span>
+              <span className="text-base">🥣</span>
               <span>Máng ăn sau khi trang bị sẽ xuất hiện ngay tại sảnh phòng của mèo!</span>
             </div>
           )}
@@ -281,13 +346,22 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
                   <div className="flex items-start gap-2.5">
                     {/* Item Large Icon */}
                     <div
-                      className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0 shadow-2xs border"
+                      className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0 shadow-2xs border overflow-hidden p-1"
                       style={{
                         backgroundColor: item.accentColor,
                         borderColor: item.color,
                       }}
                     >
-                      {item.icon}
+                      {item.image ? (
+                        <img
+                          src={item.image}
+                          alt={item.name}
+                          className={`w-full h-full ${item.category === 'rooms' ? 'object-cover object-bottom' : 'object-contain'} select-none`}
+                          loading="lazy"
+                        />
+                      ) : (
+                        item.icon
+                      )}
                     </div>
 
                     {/* Item Info */}
@@ -305,6 +379,13 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
                         <p className="text-[11px] font-bold text-secondary mt-0.5 leading-tight">
                            {item.perk}
                         </p>
+                      )}
+
+                      {item.category === 'balls' && (
+                        <div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-black leading-none">
+                          <span>🪙</span>
+                          <span>{getToyRewardConfig(item).label}</span>
+                        </div>
                       )}
 
                       <p className="text-[11px] text-on-surface-variant font-medium mt-0.5 line-clamp-2 leading-tight">
@@ -346,9 +427,17 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
                       {equipped
                         ? item.category === 'hats' || item.category === 'clothes'
                           ? 'Đang Đội (Tháo)'
+                          : item.category === 'balls'
+                          ? `Đang Đặt (${equippedBallsList.indexOf(item.id) + 1}/3 - Tháo)`
+                          : item.category === 'rooms'
+                          ? 'Đang Dùng'
                           : 'Đang Trưng Bày'
                         : owned
-                        ? 'Trang Bị'
+                        ? item.category === 'rooms'
+                          ? 'Đổi Phòng'
+                          : item.category === 'balls'
+                          ? `Gắn Lên Phòng (${equippedBallsList.length}/3)`
+                          : 'Trang Bị'
                         : `Mua (${formatNumber(item.price)}🪙)`}
                     </button>
                   </div>

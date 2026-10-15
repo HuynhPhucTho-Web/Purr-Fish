@@ -3,12 +3,14 @@ import type { CaughtFishItem } from '../data/fishes';
 import type { CatSkin } from '../data/skins';
 import { SKINS } from '../data/skins';
 import type { RankTier, CatGrowthStage } from '../data/rankTiers';
-import { FISHING_RODS_CATALOG, getRodById, type FishingRod } from '../data/fishingRods';
+import { FISHING_RODS_CATALOG, getRodById, type FishingRod, getRodRepairCost } from '../data/fishingRods';
 import { FOOD_SHOP_CATALOG, type FoodItem } from '../data/foodShop';
 import {
   FASHION_DECOR_CATALOG,
   type FashionDecorItem,
   getFashionItemById,
+  getSavedHatTransform,
+  getToyRewardConfig,
 } from '../data/fashionAndDecor';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
@@ -32,7 +34,9 @@ export interface BackpackViewProps {
   equippedDecor?: {
     bowl?: string;
     ball?: string;
+    balls?: string[];
     rug?: string;
+    room?: string;
   };
   levelInfo: {
     level: number;
@@ -52,7 +56,14 @@ export interface BackpackViewProps {
   onFeedFromInventory?: (
     foodItem: FoodItem,
     quantity: number
-  ) => { success: boolean; restoredFood: number; restoredWater: number; gainedXp: number };
+  ) => {
+    success: boolean;
+    restoredFood: number;
+    restoredWater: number;
+    gainedXp: number;
+    satietyMinutesAdded?: number;
+    satietyDecayReduction?: number;
+  };
   onOpenPond: () => void;
   onOpenFoodShop?: () => void;
   onBackToCat: () => void;
@@ -71,8 +82,8 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
   equippedHat = '',
   ownedClothes = [],
   equippedClothes = '',
-  ownedRoomDecor = ['bowl_clay', 'ball_yarn_red', 'rug_peach'],
-  equippedDecor = { bowl: 'bowl_clay', ball: 'ball_yarn_red', rug: 'rug_peach' },
+  ownedRoomDecor = ['bowl_clay', 'ball_yarn_red', 'rug_peach', 'room_go_co_dien'],
+  equippedDecor = { bowl: 'bowl_clay', ball: 'ball_yarn_red', balls: ['ball_yarn_red'], rug: 'rug_peach', room: 'room_go_co_dien' },
   levelInfo,
   catStage,
   onSellFish,
@@ -90,7 +101,7 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [sortOption, setSortOption] = useState<'newest' | 'heaviest' | 'value' | 'rarity'>('newest');
   const [catSquish, setCatSquish] = useState<boolean>(false);
-  const [fashionFilter, setFashionFilter] = useState<'all' | 'skins' | 'hats' | 'clothes' | 'decor'>('all');
+  const [fashionFilter, setFashionFilter] = useState<'all' | 'skins' | 'hats' | 'clothes' | 'decor' | 'rooms'>('all');
 
   // Trigger floating haptic toast
   const showToast = (msg: string) => {
@@ -157,7 +168,15 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
 
   const ownedHatsList = useMemo(() => {
     return FASHION_DECOR_CATALOG.filter(
-      (item) => item.category === 'hats' && (ownedHats.includes(item.id) || item.price === 0)
+      (item) =>
+        item.category === 'hats' &&
+        (ownedHats.includes(item.id) ||
+          (item.id === 'hat_hai_tac' && ownedHats.includes('hat_pirate')) ||
+          (item.id === 'hat_phu_thuy' && ownedHats.includes('hat_wizard')) ||
+          (item.id === 'hat_len_xam' && ownedHats.includes('hat_warm_beanie')) ||
+          (item.id === 'hat_rong_vanh' && ownedHats.includes('hat_straw')) ||
+          (item.id === 'hat_vuong_mien_hoang_gia' && ownedHats.includes('hat_crown')) ||
+          item.price === 0)
     );
   }, [ownedHats]);
 
@@ -172,6 +191,12 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
       (item) =>
         (item.category === 'bowls' || item.category === 'balls' || item.category === 'rugs') &&
         (ownedRoomDecor.includes(item.id) || item.price === 0)
+    );
+  }, [ownedRoomDecor]);
+
+  const ownedRoomsList = useMemo(() => {
+    return FASHION_DECOR_CATALOG.filter(
+      (item) => item.category === 'rooms' && (ownedRoomDecor.includes(item.id) || item.price === 0)
     );
   }, [ownedRoomDecor]);
 
@@ -242,7 +267,9 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
     if (onFeedFromInventory) {
       const res = onFeedFromInventory(item, 1);
       if (res.success) {
-        showToast(`😋 Mèo đã chén ${item.name}! (+${res.restoredFood}% No, +${formatNumber(res.gainedXp)} XP)`);
+        const satietyMins = res.satietyMinutesAdded || (item.satietyMinutes || 6);
+        const reduction = Math.round((1 - (res.satietyDecayReduction ?? (item.satietyDecayReduction ?? 0.7))) * 100);
+        showToast(`😋 Mèo đã chén ${item.name}! (+${res.restoredFood}% No, No Lâu +${satietyMins}p -${reduction}% đói, +${formatNumber(res.gainedXp)} XP)`);
       }
     }
   };
@@ -251,9 +278,10 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
   const curClothesObj = getFashionItemById(equippedClothes);
   const curBowlObj = getFashionItemById(equippedDecor.bowl);
   const curBallObj = getFashionItemById(equippedDecor.ball);
+  const curRoomObj = getFashionItemById(equippedDecor?.room || 'room_go_co_dien');
 
   return (
-    <div className="view-page-container max-w-xl mx-auto px-margin pb-24 pt-2 select-none font-body-md text-on-surface">
+    <div className="view-page-container max-w-xl mx-auto px-2 sm:px-margin pb-20 sm:pb-24 pt-1 sm:pt-2 select-none font-body-md text-on-surface">
       {/* Floating Haptic Toast Alert */}
       {toastMessage && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-surface-container-lowest text-on-surface px-4 py-2 rounded-full shadow-lg flex items-center gap-2 border border-primary/20 animate-bounce-in">
@@ -265,29 +293,29 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
       )}
 
       {/* Backpack Header Banner */}
-      <div className="relative overflow-hidden rounded-lg bg-surface-container-high p-space-md shadow-sm mb-3">
-        <div className="flex items-center justify-between relative z-10">
-          <div className="flex items-center gap-space-sm">
-            <div className="w-12 h-12 rounded-full bg-primary-container/20 flex items-center justify-center text-primary shadow-sm shrink-0">
-              <span className="material-symbols-outlined text-[28px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+      <div className="relative overflow-hidden rounded-xl bg-surface-container-high p-2.5 sm:p-space-md shadow-sm mb-2.5 sm:mb-3">
+        <div className="flex items-center justify-between relative z-10 gap-2">
+          <div className="flex items-center gap-2 sm:gap-space-sm min-w-0">
+            <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-full bg-primary-container/20 flex items-center justify-center text-primary shadow-sm shrink-0">
+              <span className="material-symbols-outlined text-[22px] sm:text-[28px]" style={{ fontVariationSettings: "'FILL' 1" }}>
                 backpack
               </span>
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-headline-md text-headline-md text-on-surface">Balo Của Boss</span>
-                <span className="bg-secondary-container text-on-secondary-container font-label-sm text-label-sm px-2 py-0.5 rounded-full font-bold">
+                <span className="font-headline-md text-sm sm:text-headline-md text-on-surface font-bold truncate">Balo Của Boss</span>
+                <span className="bg-secondary-container text-on-secondary-container text-[10px] sm:text-label-sm px-1.5 sm:px-2 py-0.5 rounded-full font-bold">
                   Lv.{levelInfo.level} {catStage.label}
                 </span>
               </div>
-              <p className="font-body-sm text-body-sm text-on-surface-variant">
+              <p className="hidden sm:block font-body-sm text-body-sm text-on-surface-variant truncate">
                 Quản lý chiến lợi phẩm và các đồ đạc đã sở hữu
               </p>
             </div>
           </div>
           <button
             type="button"
-            className="px-3 py-1.5 rounded-full bg-surface-container-lowest flex items-center gap-1 text-on-surface shadow-sm hover:text-primary transition-colors cursor-pointer text-xs font-bold shrink-0"
+            className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full bg-surface-container-lowest flex items-center gap-1 text-on-surface shadow-sm hover:text-primary transition-colors cursor-pointer text-xs font-bold shrink-0"
             onClick={onBackToCat}
             title="Quay lại phòng mèo"
           >
@@ -297,12 +325,12 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
       </div>
 
       {/* Primary 4 Navigation Capsule Tabs (Squishy Kawaii Style) */}
-      <div className="grid grid-cols-4 p-1 bg-surface-container-highest rounded-full shadow-inner gap-1 mb-4">
+      <div className="grid grid-cols-4 p-0.5 sm:p-1 bg-surface-container-highest rounded-xl sm:rounded-full shadow-inner gap-0.5 sm:gap-1 mb-2.5 sm:mb-4">
         <button
           type="button"
-          className={`flex flex-col items-center py-2 px-1 rounded-full transition-all duration-200 cursor-pointer ${
+          className={`flex flex-col items-center py-1 sm:py-2 px-0.5 rounded-lg sm:rounded-full transition-all duration-200 cursor-pointer ${
             activeTab === 'fish'
-              ? 'bg-primary text-on-primary font-bold shadow-[0_3px_0_#842415]'
+              ? 'bg-primary text-on-primary font-bold shadow-[0_2px_0_#842415] sm:shadow-[0_3px_0_#842415]'
               : 'text-on-surface-variant hover:text-on-surface'
           }`}
           onClick={() => {
@@ -310,17 +338,17 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
             setActiveTab('fish');
           }}
         >
-          <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+          <span className="material-symbols-outlined text-[18px] sm:text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>
             set_meal
           </span>
-          <span className="font-label-sm text-label-sm mt-0.5">Túi Cá</span>
+          <span className="font-label-sm text-[10px] sm:text-label-sm mt-0.5 leading-tight font-bold">Túi Cá</span>
         </button>
 
         <button
           type="button"
-          className={`flex flex-col items-center py-2 px-1 rounded-full transition-all duration-200 cursor-pointer ${
+          className={`flex flex-col items-center py-1 sm:py-2 px-0.5 rounded-lg sm:rounded-full transition-all duration-200 cursor-pointer ${
             activeTab === 'rods'
-              ? 'bg-primary text-on-primary font-bold shadow-[0_3px_0_#842415]'
+              ? 'bg-primary text-on-primary font-bold shadow-[0_2px_0_#842415] sm:shadow-[0_3px_0_#842415]'
               : 'text-on-surface-variant hover:text-on-surface'
           }`}
           onClick={() => {
@@ -328,15 +356,15 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
             setActiveTab('rods');
           }}
         >
-          <span className="material-symbols-outlined text-[20px]">phishing</span>
-          <span className="font-label-sm text-label-sm mt-0.5">Cần Câu ({ownedRods.length})</span>
+          <span className="material-symbols-outlined text-[18px] sm:text-[20px]">phishing</span>
+          <span className="font-label-sm text-[10px] sm:text-label-sm mt-0.5 leading-tight font-bold">Cần Câu</span>
         </button>
 
         <button
           type="button"
-          className={`flex flex-col items-center py-2 px-1 rounded-full transition-all duration-200 cursor-pointer ${
+          className={`flex flex-col items-center py-1 sm:py-2 px-0.5 rounded-lg sm:rounded-full transition-all duration-200 cursor-pointer ${
             activeTab === 'outfits'
-              ? 'bg-primary text-on-primary font-bold shadow-[0_3px_0_#842415]'
+              ? 'bg-primary text-on-primary font-bold shadow-[0_2px_0_#842415] sm:shadow-[0_3px_0_#842415]'
               : 'text-on-surface-variant hover:text-on-surface'
           }`}
           onClick={() => {
@@ -344,15 +372,15 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
             setActiveTab('outfits');
           }}
         >
-          <span className="material-symbols-outlined text-[20px]">styler</span>
-          <span className="font-label-sm text-label-sm mt-0.5">Thời Trang</span>
+          <span className="material-symbols-outlined text-[18px] sm:text-[20px]">styler</span>
+          <span className="font-label-sm text-[10px] sm:text-label-sm mt-0.5 leading-tight font-bold">Thời Trang</span>
         </button>
 
         <button
           type="button"
-          className={`flex flex-col items-center py-2 px-1 rounded-full transition-all duration-200 cursor-pointer ${
+          className={`flex flex-col items-center py-1 sm:py-2 px-0.5 rounded-lg sm:rounded-full transition-all duration-200 cursor-pointer ${
             activeTab === 'food'
-              ? 'bg-primary text-on-primary font-bold shadow-[0_3px_0_#842415]'
+              ? 'bg-primary text-on-primary font-bold shadow-[0_2px_0_#842415] sm:shadow-[0_3px_0_#842415]'
               : 'text-on-surface-variant hover:text-on-surface'
           }`}
           onClick={() => {
@@ -360,8 +388,8 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
             setActiveTab('food');
           }}
         >
-          <span className="material-symbols-outlined text-[20px]">restaurant</span>
-          <span className="font-label-sm text-label-sm mt-0.5">Thức Ăn ({ownedFoodsList.length})</span>
+          <span className="material-symbols-outlined text-[18px] sm:text-[20px]">restaurant</span>
+          <span className="font-label-sm text-[10px] sm:text-label-sm mt-0.5 leading-tight font-bold">Thức Ăn</span>
         </button>
       </div>
 
@@ -537,6 +565,7 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
               const duraPercent = Math.round((currentDura / rod.maxDurability) * 100);
               const isCritical = isEquipped && currentDura <= 2;
               const isLow = isEquipped && currentDura <= Math.round(rod.maxDurability * 0.4);
+              const repairCost = rod.repairPrice ?? rod.repairCost ?? getRodRepairCost(rod);
 
               return (
                 <div
@@ -599,24 +628,29 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
                       >
                         Trang Bị Cần Này
                       </button>
+                    ) : currentDura <= 0 ? (
+                      <button
+                        type="button"
+                        className="flex-1 py-2 rounded-full bg-gradient-to-r from-red-500 to-orange-500 text-white font-label-md text-label-md flex items-center justify-center gap-1 hover:brightness-105 cursor-pointer font-bold shadow-xs"
+                        onClick={() => {
+                          if (fish < repairCost) {
+                            showToast(`Không đủ xu! Cần ${formatNumber(repairCost)} xu để sửa cần.`);
+                            return;
+                          }
+                          if (onBuyOrEquipRod) {
+                            const res = onBuyOrEquipRod(rod.id);
+                            showToast(res.message);
+                          }
+                        }}
+                      >
+                        <span className="material-symbols-outlined text-[16px]">build</span>
+                        <span>Sửa Cần Hỏng ({formatNumber(repairCost)} 🪙)</span>
+                      </button>
                     ) : (
-                      currentDura < rod.maxDurability && (
-                        <button
-                          type="button"
-                          className="flex-1 py-2 rounded-full bg-tertiary-container text-on-tertiary-container font-label-md text-label-md flex items-center justify-center gap-1 hover:brightness-105 cursor-pointer font-bold shadow-xs"
-                          onClick={() => {
-                            if (fish < 150) {
-                              showToast('Không đủ xu! Cần 150 xu để sửa cần.');
-                              return;
-                            }
-                            handleEquipRod(rod);
-                            showToast(`Đã phục hồi độ bền cho ${rod.name}!`);
-                          }}
-                        >
-                          <span className="material-symbols-outlined text-[16px]">build</span>
-                          <span>Sửa Độ Bền (150 🪙)</span>
-                        </button>
-                      )
+                      <div className="flex-1 py-2 rounded-full bg-surface-container text-on-surface-variant font-label-md text-label-md flex items-center justify-center gap-1 font-bold">
+                        <span className="material-symbols-outlined text-[16px]">check</span>
+                        <span>Đang Trang Bị</span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -651,14 +685,50 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
         <div className="flex flex-col gap-space-md animate-fade-in">
           {/* Live Preview Stage (Phòng Thay Đồ Của Boss) */}
           <div className="bg-gradient-to-b from-surface-container to-surface-container-low rounded-lg p-space-md flex flex-col items-center relative shadow-sm overflow-hidden">
-            <div className="absolute top-3 left-3 bg-surface-container-lowest/80 backdrop-blur-md px-2.5 py-1 rounded-full font-label-sm text-label-sm text-primary flex items-center gap-1 font-bold">
+            {/* Equipped Room Background */}
+            {curRoomObj?.image && (
+              <div className="absolute inset-0 z-0 pointer-events-none select-none overflow-hidden">
+                <img
+                  src={curRoomObj.image}
+                  alt={curRoomObj.name}
+                  className="w-full h-full object-cover object-bottom opacity-40 transition-all duration-700"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-surface-container-low via-surface-container-low/75 to-surface-container/75 pointer-events-none" />
+              </div>
+            )}
+
+            <div className="absolute top-3 left-3 bg-surface-container-lowest/80 backdrop-blur-md px-2.5 py-1 rounded-full font-label-sm text-label-sm text-primary flex items-center gap-1 font-bold z-10">
               <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
               <span>Phòng Thử Đồ</span>
             </div>
 
             {/* Interactive Cat Avatar with Current Tried Items */}
-            <div className="w-36 h-36 relative my-2 flex items-center justify-center">
+            <div className="w-36 h-36 relative my-2 flex items-center justify-center z-10">
               <div className="absolute inset-0 bg-primary-fixed-dim/30 rounded-full blur-xl" />
+              {curHatObj && (() => {
+                const hatFitting = getSavedHatTransform(curHatObj.id);
+                return (
+                  <div
+                    style={{
+                      transform: `translate(calc(-50% + ${hatFitting.offsetX * 0.8}px), ${hatFitting.offsetY * 0.8}px) rotate(${hatFitting.rotation}deg) scale(${hatFitting.scale * 0.85})`,
+                      transformOrigin: 'bottom center',
+                    }}
+                    className="absolute -top-5 left-1/2 z-30 pointer-events-none animate-bounce-gentle flex items-center justify-center"
+                    title={curHatObj.name}
+                  >
+                    {curHatObj.image ? (
+                      <img
+                        src={curHatObj.image}
+                        alt={curHatObj.name}
+                        className="w-20 h-20 object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.25)] select-none pointer-events-none"
+                        draggable={false}
+                      />
+                    ) : (
+                      <span className="text-3xl filter drop-shadow-md">{curHatObj.icon}</span>
+                    )}
+                  </div>
+                );
+              })()}
               <img
                 src={currentSkin.image || currentSkin.imageOpen}
                 alt={currentSkin.name}
@@ -676,7 +746,7 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
             </div>
 
             {/* Current Active Equipments */}
-            <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2">
+            <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2 z-10">
               <span className="px-2 py-0.5 rounded-full bg-surface-container-lowest text-xs font-bold text-on-surface">
                 🐱 {currentSkin.name}
               </span>
@@ -688,6 +758,11 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
               {curClothesObj && (
                 <span className="px-2 py-0.5 rounded-full bg-surface-container-lowest text-xs font-bold text-secondary">
                   {curClothesObj.icon} {curClothesObj.name}
+                </span>
+              )}
+              {curRoomObj && (
+                <span className="px-2 py-0.5 rounded-full bg-surface-container-lowest text-xs font-bold text-amber-800">
+                  🏡 {curRoomObj.name}
                 </span>
               )}
               {curBowlObj && (
@@ -756,6 +831,15 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
             <button
               type="button"
               className={`px-3 py-1.5 rounded-full font-label-sm text-label-sm shrink-0 cursor-pointer font-bold ${
+                fashionFilter === 'rooms' ? 'bg-primary text-on-primary shadow-xs' : 'bg-surface-container-highest text-on-surface-variant'
+              }`}
+              onClick={() => setFashionFilter('rooms')}
+            >
+              🏡 Phòng Nền ({ownedRoomsList.length})
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-full font-label-sm text-label-sm shrink-0 cursor-pointer font-bold ${
                 fashionFilter === 'decor' ? 'bg-primary text-on-primary shadow-xs' : 'bg-surface-container-highest text-on-surface-variant'
               }`}
               onClick={() => setFashionFilter('decor')}
@@ -814,7 +898,13 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
             {/* 2. Owned Hats */}
             {(fashionFilter === 'all' || fashionFilter === 'hats') &&
               ownedHatsList.map((item) => {
-                const isEquipped = equippedHat === item.id;
+                const isEquipped =
+                  equippedHat === item.id ||
+                  (item.id === 'hat_hai_tac' && equippedHat === 'hat_pirate') ||
+                  (item.id === 'hat_phu_thuy' && equippedHat === 'hat_wizard') ||
+                  (item.id === 'hat_len_xam' && equippedHat === 'hat_warm_beanie') ||
+                  (item.id === 'hat_rong_vanh' && equippedHat === 'hat_straw') ||
+                  (item.id === 'hat_vuong_mien_hoang_gia' && equippedHat === 'hat_crown');
                 return (
                   <div
                     key={`hat_${item.id}`}
@@ -826,8 +916,17 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
                       {isEquipped ? 'Đang Đội' : 'Mũ'}
                     </span>
 
-                    <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center my-2 text-3xl">
-                      {item.icon}
+                    <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center my-2 text-3xl overflow-hidden p-1 border border-outline-variant/20">
+                      {item.image ? (
+                        <img
+                          src={item.image}
+                          alt={item.name}
+                          className="w-full h-full object-contain select-none"
+                          loading="lazy"
+                        />
+                      ) : (
+                        item.icon
+                      )}
                     </div>
 
                     <span className="font-label-md text-label-md text-on-surface mb-1 font-bold line-clamp-1">{item.name}</span>
@@ -885,37 +984,33 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
                 );
               })}
 
-            {/* 4. Owned Room Decor (Bowls, Balls, Rugs) */}
-            {(fashionFilter === 'all' || fashionFilter === 'decor') &&
-              ownedDecorList.map((item) => {
-                const isEquipped =
-                  item.category === 'bowls'
-                    ? equippedDecor.bowl === item.id
-                    : item.category === 'balls'
-                    ? equippedDecor.ball === item.id
-                    : equippedDecor.rug === item.id;
-
+            {/* 4. Owned Room Backgrounds */}
+            {(fashionFilter === 'all' || fashionFilter === 'rooms') &&
+              ownedRoomsList.map((item) => {
+                const isEquipped = (equippedDecor.room || 'room_go_co_dien') === item.id;
                 return (
                   <div
-                    key={`decor_${item.id}`}
+                    key={`room_${item.id}`}
                     className={`bg-surface-container-lowest rounded-lg p-space-sm shadow-sm flex flex-col justify-between items-center text-center relative border ${
                       isEquipped ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-outline-variant/30'
                     }`}
                   >
-                    <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-full font-label-sm text-label-sm bg-purple-100 text-purple-900 font-bold">
-                      {isEquipped ? 'Đang Đặt' : 'Sảnh'}
+                    <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-full font-label-sm text-label-sm bg-amber-100 text-amber-900 font-bold z-10">
+                      {isEquipped ? 'Đang Dùng' : 'Phòng'}
                     </span>
 
-                    <div className="w-16 h-16 rounded-2xl bg-purple-50 flex items-center justify-center my-2 text-3xl overflow-hidden border border-purple-100">
+                    <div className="w-full h-20 rounded-xl overflow-hidden my-2 border border-amber-200/50 shadow-inner relative">
                       {item.image ? (
                         <img
                           src={item.image}
                           alt={item.name}
-                          className="w-full h-full object-contain p-1"
+                          className="w-full h-full object-cover object-bottom"
                           loading="lazy"
                         />
                       ) : (
-                        item.icon
+                        <div className="w-full h-full flex items-center justify-center text-3xl bg-amber-50">
+                          {item.icon}
+                        </div>
                       )}
                     </div>
 
@@ -931,19 +1026,92 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
                       }`}
                       onClick={() => onEquipFashionItem && onEquipFashionItem(item)}
                     >
-                      {isEquipped ? 'Đang Trưng Bày' : 'Đặt Vào Sảnh'}
+                      {isEquipped ? 'Đang Dùng' : 'Đổi Phòng'}
                     </button>
                   </div>
                 );
               })}
+
+            {/* 5. Owned Room Decor (Bowls, Balls, Rugs) */}
+            {(fashionFilter === 'all' || fashionFilter === 'decor') &&
+              (() => {
+                const equippedBallsList: string[] = Array.isArray(equippedDecor.balls) && equippedDecor.balls.length > 0
+                  ? equippedDecor.balls
+                  : equippedDecor.ball ? [equippedDecor.ball] : ['ball_yarn_red'];
+
+                return ownedDecorList.map((item) => {
+                  const isEquipped =
+                    item.category === 'bowls'
+                      ? equippedDecor.bowl === item.id
+                      : item.category === 'balls'
+                      ? equippedBallsList.includes(item.id)
+                      : equippedDecor.rug === item.id;
+
+                  const ballSlotIndex = item.category === 'balls' && isEquipped
+                    ? equippedBallsList.indexOf(item.id) + 1
+                    : null;
+
+                  return (
+                    <div
+                      key={`decor_${item.id}`}
+                      className={`bg-surface-container-lowest rounded-lg p-space-sm shadow-sm flex flex-col justify-between items-center text-center relative border ${
+                        isEquipped ? 'border-primary shadow-md ring-2 ring-primary/20' : 'border-outline-variant/30'
+                      }`}
+                    >
+                      <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-full font-label-sm text-label-sm bg-purple-100 text-purple-900 font-bold">
+                        {ballSlotIndex ? `Đang Đặt (${ballSlotIndex}/3)` : isEquipped ? 'Đang Đặt' : 'Sảnh'}
+                      </span>
+
+                      <div className="w-16 h-16 rounded-2xl bg-purple-50 flex items-center justify-center my-2 text-3xl overflow-hidden border border-purple-100">
+                        {item.image ? (
+                          <img
+                            src={item.image}
+                            alt={item.name}
+                            className="w-full h-full object-contain p-1"
+                            loading="lazy"
+                          />
+                        ) : (
+                          item.icon
+                        )}
+                      </div>
+
+                      <span className="font-label-md text-label-md text-on-surface mb-1 font-bold line-clamp-1">{item.name}</span>
+                      <span className="font-body-sm text-body-sm text-secondary text-[11px] mb-1 line-clamp-1">{item.perk}</span>
+                      {item.category === 'balls' && (
+                        <span className="text-[10px] font-black text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 mb-2">
+                          🪙 {getToyRewardConfig(item).label}
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        className={`w-full py-1.5 rounded-full font-label-sm text-label-sm font-bold transition-all cursor-pointer ${
+                          isEquipped
+                            ? 'bg-secondary text-on-secondary'
+                            : 'bg-surface-container-high text-primary hover:bg-surface-container'
+                        }`}
+                        onClick={() => onEquipFashionItem && onEquipFashionItem(item)}
+                      >
+                        {isEquipped
+                          ? item.category === 'balls'
+                            ? `Đang Đặt (${ballSlotIndex}/3 - Tháo)`
+                            : 'Đang Trưng Bày'
+                          : item.category === 'balls'
+                          ? `Gắn Lên Phòng (${equippedBallsList.length}/3)`
+                          : 'Đặt Vào Sảnh'}
+                      </button>
+                    </div>
+                  );
+                });
+              })()}
           </div>
 
           {/* Empty hint */}
-          {ownedHatsList.length === 0 && ownedClothesList.length === 0 && (
+          {ownedHatsList.length === 0 && ownedClothesList.length === 0 && ownedRoomsList.length === 0 && ownedDecorList.length === 0 && (
             <div className="bg-surface-container-lowest rounded-xl p-4 text-center border border-dashed border-outline-variant/40">
-              <p className="text-xs font-bold text-on-surface">Bạn chưa sở hữu chiếc mũ hay áo nào</p>
+              <p className="text-xs font-bold text-on-surface">Bạn chưa sở hữu thêm phụ kiện hay phòng nào</p>
               <p className="text-[11px] text-on-surface-variant mt-1">
-                Ghé Shop Thời Trang để sắm những bộ cánh lộng lẫy nhất cho Boss mèo nhé!
+                Ghé Shop Thời Trang để sắm những căn phòng và trang phục lộng lẫy nhất cho Boss mèo nhé!
               </p>
               {onOpenFashionShop && (
                 <button

@@ -1,22 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGameState } from './hooks/useGameState';
 import { useAutoFish } from './hooks/useAutoFish';
 import { useLocalSave } from './hooks/useLocalSave';
 import { ScoreDisplay } from './components/ScoreDisplay';
 import { CatCharacter } from './components/CatCharacter';
 import { BottomNavBar, type AppPage } from './components/BottomNavBar';
-import { FishPond } from './components/FishPond';
-import { BackpackView } from './components/BackpackView';
-import { FashionShopView } from './components/FashionShopView';
-import { FoodShopMealPlanView } from './components/FoodShopMealPlanView';
-import { UpgradeSkinView } from './components/UpgradeSkinView';
-import { LeaderboardView } from './components/LeaderboardView';
-import { AccountSettingsView } from './components/AccountSettingsView';
-import { AuthModal } from './components/AuthModal';
-import { SettingsModal } from './components/SettingsModal';
 import { FloatingReward } from './components/FloatingReward';
 import { authService } from './services/authService';
+import { soundManager } from './utils/sound';
 import './styles/game.css';
+
+// Lazy-loaded heavy views and modals for fast initial load
+const FishPond = React.lazy(() => import('./components/FishPond').then((m) => ({ default: m.FishPond })));
+const BackpackView = React.lazy(() => import('./components/BackpackView').then((m) => ({ default: m.BackpackView })));
+const GrowthUpgradeView = React.lazy(() => import('./components/GrowthUpgradeView').then((m) => ({ default: m.GrowthUpgradeView })));
+const MasterShopView = React.lazy(() => import('./components/MasterShopView').then((m) => ({ default: m.MasterShopView })));
+const LeaderboardView = React.lazy(() => import('./components/LeaderboardView').then((m) => ({ default: m.LeaderboardView })));
+const AccountSettingsView = React.lazy(() => import('./components/AccountSettingsView').then((m) => ({ default: m.AccountSettingsView })));
+const AuthModal = React.lazy(() => import('./components/AuthModal').then((m) => ({ default: m.AuthModal })));
+const SettingsModal = React.lazy(() => import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal })));
+const AvatarPickerModal = React.lazy(() => import('./components/AvatarPickerModal').then((m) => ({ default: m.AvatarPickerModal })));
 
 export const App: React.FC = () => {
   const {
@@ -44,6 +47,7 @@ export const App: React.FC = () => {
     buyMealPlan,
     giveWater,
     handleClick,
+    playWithToy,
     buyUpgrade,
     unlockSkin,
     equipSkin,
@@ -69,9 +73,13 @@ export const App: React.FC = () => {
     buyOrEquipRod,
     useRodDurability,
     resetGame,
+    logoutGame,
     importSave,
     exportSave,
     syncToCloud,
+    updateUserAvatar,
+    updateCatName,
+    loadUserDataFromCloud,
   } = useGameState();
 
   // Automatic idle fish catching
@@ -80,21 +88,44 @@ export const App: React.FC = () => {
     onAddFish: addAutoFishAmount,
   });
 
-  // Local storage auto-saving
-  const { saveStatus, saveNow } = useLocalSave(state);
+  // Local storage auto-saving (chỉ lưu khi có user đăng nhập)
+  const { saveStatus, saveNow } = useLocalSave(state, currentUser);
 
   // Active Main Navigation Page ('cat' | 'pond' | 'basket' | 'food' | 'shop' | 'leaderboard' | 'account')
   const [activePage, setActivePage] = useState<AppPage>('cat');
 
+  // Quản lý chuyển đổi nhạc nền game:
+  // - Khi vào hồ câu cá ('pond'): phát /sounds/music/fish-chill.mp3
+  // - Khi ở phòng mèo và các màn hình khác: phát /sounds/music/music-layout.mp3
+  useEffect(() => {
+    if (activePage === 'pond') {
+      soundManager.setBgmTrack('pond');
+    } else {
+      soundManager.setBgmTrack('room');
+    }
+  }, [activePage]);
+
   // Subtab memory for quick-jump transitions
-  const [shopSubTab] = useState<'upgrades' | 'skins'>('upgrades');
+  const [shopSubTab, setShopSubTab] = useState<'rods' | 'food' | 'fashion' | 'fish'>('rods');
+  const [growthSubTab, setGrowthSubTab] = useState<'upgrades' | 'skins' | 'meal_plans'>('upgrades');
+  const [autoOpenFeedModal, setAutoOpenFeedModal] = useState<boolean>(false);
   const [accountSubTab, setAccountSubTab] = useState<'account' | 'settings'>('account');
 
-  // Màn hình Tạo Tài Khoản / Đăng Nhập: Hiển thị lên trước tiên khi vào game nếu chưa có tài khoản chính thức
+  // Màn hình Tạo Tài Khoản / Đăng Nhập: Hiển thị nếu lần đầu vào game và chưa có tài khoản
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(() => {
-    const cur = authService.getCurrentUser();
-    return !cur || cur.isAnonymous;
+    try {
+      const hasVisited = localStorage.getItem('PURR_FISH_HAS_VISITED');
+      if (!hasVisited) {
+        localStorage.setItem('PURR_FISH_HAS_VISITED', 'true');
+        const cur = authService.getCurrentUser();
+        return !cur || cur.isAnonymous;
+      }
+    } catch {}
+    return false;
   });
+
+  // Modal Chọn Avatar Boss Mèo (Bật lên khi click vào Avatar / Level trên header)
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState<boolean>(false);
 
   // Modal Cài Đặt (Mở nhanh từ nút bánh răng ⚙️ trên header)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
@@ -109,6 +140,7 @@ export const App: React.FC = () => {
         highestFish={state.highestFish}
         level={levelInfo.level}
         rankBadge={levelInfo.rankTier.badge}
+        rankBadgeImage={levelInfo.rankTier.badgeImage}
         rankTierName={levelInfo.rankTier.name}
         currentUser={currentUser}
         soundEnabled={state.settings.soundEnabled}
@@ -119,12 +151,10 @@ export const App: React.FC = () => {
             ? '• Hồ Câu'
             : activePage === 'basket'
             ? '• Balo Của Boss'
-            : activePage === 'fashion'
-            ? '• Shop Thời Trang'
-            : activePage === 'food'
-            ? '• Ăn Uống'
-            : activePage === 'shop'
-            ? '• Nâng Cấp'
+            : activePage === 'growth'
+            ? '• Nâng Cấp & Skin'
+            : activePage === 'shop' || activePage === 'food' || activePage === 'fashion'
+            ? '• Cửa Hàng Tổng Hợp'
             : activePage === 'account'
             ? '• Tài Khoản'
             : '• Phòng Mèo'
@@ -140,15 +170,21 @@ export const App: React.FC = () => {
           }
         }}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onOpenAvatarPicker={() => setIsAvatarPickerOpen(true)}
       />
 
       {/* 2. DEDICATED VIEW PAGES */}
-      <main className="game-main-content-area pt-20 pb-24 min-h-screen bg-surface">
-        {/* PAGE 1: PHÒNG MÈO (COZY SANCTUARY CAT ROOM) */}
+      <main className="game-main-content-area pt-16 sm:pt-20 pb-20 sm:pb-28 min-h-screen bg-surface">
+        <React.Suspense fallback={<div className="flex items-center justify-center p-12 text-slate-500 font-bold">Đang tải nội dung...</div>}>
+          {/* PAGE 1: PHÒNG MÈO (COZY SANCTUARY CAT ROOM) */}
         {activePage === 'cat' && (
           <div className="cat-page-view">
             <CatCharacter
               currentSkin={currentSkin}
+              catName={state.catName || currentUser?.catName || currentUser?.displayName || currentSkin.name}
+              username={state.username || currentUser?.username || ''}
+              catAvatar={state.catAvatar || currentUser?.photoURL || currentSkin.image}
+              onOpenAvatarPicker={() => setIsAvatarPickerOpen(true)}
               isCatActive={isCatActive}
               actualClickPower={actualClickPower}
               autoFishRate={autoFishRate}
@@ -160,7 +196,6 @@ export const App: React.FC = () => {
               food={state.food}
               water={state.water}
               basketCount={basketCount}
-              coins={state.fish}
               foodInventory={foodInventory}
               ownedHats={ownedHats}
               equippedHat={equippedHat}
@@ -169,18 +204,41 @@ export const App: React.FC = () => {
               ownedRoomDecor={ownedRoomDecor}
               equippedDecor={equippedDecor}
               lastWaterGiftClaimedAt={lastWaterGiftClaimedAt}
+              satietyExpiresAt={state.satietyExpiresAt}
+              satietyTotalDurationMs={state.satietyTotalDurationMs}
+              zeroDecayUntil={state.zeroDecayUntil}
+              satietyDecayReduction={state.satietyDecayReduction}
+              satietyFoodName={state.satietyFoodName}
+              satietyFoodTier={state.satietyFoodTier}
               levelInfo={levelInfo}
               catStage={catStage}
               onOpenPond={() => setActivePage('pond')}
-              onOpenFoodShop={() => setActivePage('food')}
-              onOpenFashionShop={() => setActivePage('fashion')}
+              onOpenFoodShop={() => {
+                setShopSubTab('food');
+                setActivePage('shop');
+              }}
+              onOpenFashionShop={() => {
+                setShopSubTab('fashion');
+                setActivePage('shop');
+              }}
               onOpenBasket={() => setActivePage('basket')}
+              onOpenRodShop={() => {
+                setShopSubTab('rods');
+                setActivePage('shop');
+              }}
+              onOpenGrowth={(tab = 'upgrades') => {
+                setGrowthSubTab(tab);
+                setActivePage('growth');
+              }}
               onFeedFromInventory={feedCatFromInventory}
               onGiveWater={giveWater}
               onClaimFreeWater={claimFreeWaterGift}
               onBuyFashionItem={buyFashionDecorItem}
               onEquipFashionItem={equipFashionDecorItem}
               onCatClick={(x, y) => handleClick(x, y)}
+              onPlayWithToy={playWithToy}
+              autoOpenFeedModal={autoOpenFeedModal}
+              onResetAutoOpenFeed={() => setAutoOpenFeedModal(false)}
             />
           </div>
         )}
@@ -194,11 +252,17 @@ export const App: React.FC = () => {
             equippedRodId={equippedRodId}
             rodDurability={rodDurability}
             unlockedRods={unlockedRods}
+            catFood={state.food}
+            satietyExpiresAt={state.satietyExpiresAt}
             onCatchFish={catchPondFish}
             onBuyRod={buyOrEquipRod}
             onUseRodDurability={useRodDurability}
             onOpenBasket={() => setActivePage('basket')}
             onClose={() => setActivePage('cat')}
+            onGoToFeed={() => {
+              setActivePage('cat');
+              setAutoOpenFeedModal(true);
+            }}
           />
         )}
 
@@ -227,58 +291,68 @@ export const App: React.FC = () => {
             onUnlockSkin={unlockSkin}
             onBuyOrEquipRod={buyOrEquipRod}
             onEquipFashionItem={equipFashionDecorItem}
-            onOpenFashionShop={() => setActivePage('fashion')}
+            onOpenFashionShop={() => {
+              setShopSubTab('fashion');
+              setActivePage('shop');
+            }}
             onFeedFromInventory={feedCatFromInventory}
             onOpenPond={() => setActivePage('pond')}
-            onOpenFoodShop={() => setActivePage('food')}
+            onOpenFoodShop={() => {
+              setShopSubTab('food');
+              setActivePage('shop');
+            }}
             onBackToCat={() => setActivePage('cat')}
           />
         )}
 
-        {/* PAGE 4: SHOP THỜI TRANG & TRANG TRÍ PHÒNG (DEDICATED FULL VIEW) */}
-        {activePage === 'fashion' && (
-          <FashionShopView
+        {/* PAGE 4: NÂNG CẤP & PHÁT TRIỂN (KỸ NĂNG • SKIN • KẾ HOẠCH BỮA ĂN) */}
+        {activePage === 'growth' && (
+          <GrowthUpgradeView
+            coins={state.fish}
+            upgrades={state.upgrades}
+            unlockedSkins={state.unlockedSkins}
+            equippedSkin={state.equippedSkin}
+            activeMealPlan={state.activeMealPlan}
+            defaultSubTab={growthSubTab}
+            onBuyUpgrade={buyUpgrade}
+            onEquipSkin={equipSkin}
+            onUnlockSkin={unlockSkin}
+            onBuyMealPlan={buyMealPlan}
+            onBackToCat={() => setActivePage('cat')}
+          />
+        )}
+
+        {/* PAGE 5: CỬA HÀNG TỔNG HỢP (CẦN CÂU • THỨC ĂN • THỜI TRANG • CHỢ CÁ) */}
+        {(activePage === 'shop' || activePage === 'food' || activePage === 'fashion') && (
+          <MasterShopView
             coins={state.fish}
             currentSkin={currentSkin}
+            equippedRodId={equippedRodId}
+            rodDurability={rodDurability}
+            unlockedRods={unlockedRods}
+            foodInventory={foodInventory}
+            fishBasket={state.fishBasket || []}
             ownedHats={ownedHats}
             equippedHat={equippedHat}
             ownedClothes={ownedClothes}
             equippedClothes={equippedClothes}
             ownedRoomDecor={ownedRoomDecor}
             equippedDecor={equippedDecor}
-            onBuyItem={buyFashionDecorItem}
-            onEquipItem={equipFashionDecorItem}
-            onBackToCat={() => setActivePage('cat')}
-          />
-        )}
-
-        {/* PAGE 4: CỬA HÀNG THỨC ĂN & KẾ HOẠCH DINH DƯỠNG (FOOD & MEAL PLANS) */}
-        {activePage === 'food' && (
-          <FoodShopMealPlanView
-            coins={state.fish}
-            currentFood={state.food}
-            currentWater={state.water}
-            foodInventory={foodInventory}
-            activeMealPlan={state.activeMealPlan}
+            defaultSubTab={
+              activePage === 'food'
+                ? 'food'
+                : activePage === 'fashion'
+                ? 'fashion'
+                : shopSubTab
+            }
+            onBuyOrEquipRod={buyOrEquipRod}
             onBuyFoodToInventory={buyFoodToInventory}
-            onFeedFromInventory={feedCatFromInventory}
-            onBuyMealPlan={buyMealPlan}
+            onBuyFashionItem={buyFashionDecorItem}
+            onEquipFashionItem={equipFashionDecorItem}
+            onSellFish={sellFish}
+            onSellAllFish={sellAllFish}
             onBackToCat={() => setActivePage('cat')}
-          />
-        )}
-
-        {/* PAGE 5: NÂNG CẤP & SKIN (UPGRADES & SKINS) */}
-        {activePage === 'shop' && (
-          <UpgradeSkinView
-            fish={state.fish}
-            upgrades={state.upgrades}
-            unlockedSkins={state.unlockedSkins}
-            equippedSkin={state.equippedSkin}
-            defaultSubTab={shopSubTab}
-            onBuyUpgrade={buyUpgrade}
-            onEquipSkin={equipSkin}
-            onUnlockSkin={unlockSkin}
-            onBackToCat={() => setActivePage('cat')}
+            onOpenPond={() => setActivePage('pond')}
           />
         )}
 
@@ -288,7 +362,8 @@ export const App: React.FC = () => {
             myLevel={levelInfo.level}
             myXp={state.xp}
             myRankTier={levelInfo.rankTier}
-            myDisplayName={currentUser?.displayName || 'Bạn (Ngư Thủ Cá Bự)'}
+            myDisplayName={state.catName || currentUser?.catName || currentUser?.displayName || 'Bạn (Ngư Thủ Cá Bự)'}
+            myAvatar={state.catAvatar || currentUser?.photoURL || currentSkin?.image || '/images/cat_avatars_webp/avatar_01.webp'}
             myBiggestFishKg={state.biggestFishKg || 12.5}
             myCoins={state.fish}
             currentSkin={currentSkin}
@@ -299,6 +374,8 @@ export const App: React.FC = () => {
             onImportSave={importSave}
             onSyncCloudNow={syncToCloud}
             onBackToCat={() => setActivePage('cat')}
+            currentUser={currentUser}
+            onOpenAuth={() => setIsAuthModalOpen(true)}
           />
         )}
 
@@ -309,6 +386,7 @@ export const App: React.FC = () => {
             settings={state.settings}
             saveStatus={saveStatus}
             defaultSubTab={accountSubTab}
+            gameState={state}
             onUpdateSettings={updateSettings}
             onSaveNow={saveNow}
             onResetGame={resetGame}
@@ -317,8 +395,11 @@ export const App: React.FC = () => {
             onSyncCloudNow={syncToCloud}
             onOpenAuthModal={() => setIsAuthModalOpen(true)}
             onBackToCat={() => setActivePage('cat')}
+            onLogout={logoutGame}
+            onUpdateCatName={updateCatName}
           />
         )}
+        </React.Suspense>
       </main>
 
       {/* 3. Floating Reward Particles & Offline Reward Modal */}
@@ -331,6 +412,7 @@ export const App: React.FC = () => {
         onCatchGoldenFish={catchGoldenFish}
         onClaimOffline={claimOfflineReward}
         clickPower={actualClickPower}
+        isCatRoomActive={activePage === 'cat'}
       />
 
       {/* 4. Bottom Navigation Bar */}
@@ -342,28 +424,65 @@ export const App: React.FC = () => {
         waterPercent={state.water}
       />
 
-      {/* 5. Màn hình Tạo Tài Khoản / Đăng Nhập (Hiện lên trước khi vào game) */}
-      {isAuthModalOpen && (
-        <AuthModal
-          currentUser={currentUser}
-          onClose={() => setIsAuthModalOpen(false)}
-          onSyncNow={syncToCloud}
-          initialTab="register"
-        />
-      )}
+      {/* 5. Lazy Modals */}
+      <React.Suspense fallback={null}>
+        {/* Màn hình Tạo Tài Khoản / Đăng Nhập (Hiện lên trước khi vào game) */}
+        {isAuthModalOpen && (
+          <AuthModal
+            currentUser={currentUser}
+            onClose={() => setIsAuthModalOpen(false)}
+            onSyncNow={(overrideUser) => syncToCloud(overrideUser)}
+            onLoginSuccess={loadUserDataFromCloud}
+            initialTab="register"
+            gameState={state}
+            level={levelInfo.level}
+            rankBadge={levelInfo.rankTier.badge}
+            rankTierName={levelInfo.rankTier.name}
+            onLogout={logoutGame}
+          />
+        )}
 
-      {/* 6. Settings Modal (Bật lên từ Nút Bánh Răng ⚙️ trên header) */}
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        settings={state.settings}
-        onUpdateSettings={updateSettings}
-        onSaveNow={saveNow}
-        saveStatus={saveStatus}
-        onResetGame={resetGame}
-        onExportSave={exportSave}
-        onImportSave={importSave}
-      />
+        {/* Settings Modal (Bật lên từ Nút Bánh Răng ⚙️ trên header) */}
+        {isSettingsModalOpen && (
+          <SettingsModal
+            isOpen={isSettingsModalOpen}
+            onClose={() => setIsSettingsModalOpen(false)}
+            settings={state.settings}
+            onUpdateSettings={updateSettings}
+            onSaveNow={saveNow}
+            saveStatus={saveStatus}
+            onResetGame={resetGame}
+            onExportSave={exportSave}
+            onImportSave={importSave}
+            currentUser={currentUser}
+            onLogout={logoutGame}
+            onOpenAuth={() => {
+              setIsSettingsModalOpen(false);
+              setIsAuthModalOpen(true);
+            }}
+            onUpdateCatName={updateCatName}
+          />
+        )}
+
+        {/* Avatar Picker Modal (Bật lên khi click vào Avatar Mèo / Level trên header) */}
+        {isAvatarPickerOpen && (
+          <AvatarPickerModal
+            isOpen={isAvatarPickerOpen}
+            onClose={() => setIsAvatarPickerOpen(false)}
+            currentAvatar={currentUser?.photoURL}
+            currentLevel={levelInfo.level}
+            displayName={state.catName || currentUser?.displayName || 'Sen Nuôi Mèo'}
+            rankBadge={levelInfo.rankTier.badge}
+            rankTierName={levelInfo.rankTier.name}
+            isLoggedIn={Boolean(currentUser && !currentUser.isAnonymous)}
+            onSelectAvatar={(avatarUrl) => updateUserAvatar(avatarUrl)}
+            onOpenAuth={() => {
+              setIsAvatarPickerOpen(false);
+              setIsAuthModalOpen(true);
+            }}
+          />
+        )}
+      </React.Suspense>
     </div>
   );
 };

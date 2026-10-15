@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import type { CatSkin } from '../data/skins';
 import type { FishSpecies } from '../data/fishes';
 import type { RankTier, CatGrowthStage } from '../data/rankTiers';
@@ -6,10 +6,28 @@ import { FOOD_SHOP_CATALOG, type FoodItem } from '../data/foodShop';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
 import { FreeWaterGiftButton } from './FreeWaterGiftButton';
-import { type FashionDecorItem, getFashionItemById } from '../data/fashionAndDecor';
+import {
+  type FashionDecorItem,
+  getFashionItemById,
+  type HatFittingState,
+  getSavedHatTransform,
+  saveHatTransform,
+  FASHION_DECOR_CATALOG,
+  getToyRewardConfig,
+  type DecorPosition,
+  DEFAULT_TOY_POSITIONS,
+  DEFAULT_BOWL_POS,
+  DECOR_POS_CHANGED_EVENT,
+  loadSavedDecorPos,
+  saveDecorPos,
+} from '../data/fashionAndDecor';
 
 interface CatCharacterProps {
   currentSkin: CatSkin;
+  catName?: string;
+  username?: string;
+  catAvatar?: string | null;
+  onOpenAvatarPicker?: () => void;
   isCatActive: boolean;
   actualClickPower: number;
   autoFishRate: number;
@@ -31,9 +49,17 @@ interface CatCharacterProps {
   equippedDecor?: {
     bowl?: string;
     ball?: string;
+    balls?: string[];
     rug?: string;
+    room?: string;
   };
   lastWaterGiftClaimedAt?: number;
+  satietyExpiresAt?: number;
+  satietyTotalDurationMs?: number;
+  zeroDecayUntil?: number;
+  satietyDecayReduction?: number;
+  satietyFoodName?: string;
+  satietyFoodTier?: 'low' | 'mid' | 'high';
   levelInfo: {
     level: number;
     currentLevelXp: number;
@@ -46,6 +72,8 @@ interface CatCharacterProps {
   onOpenFoodShop: () => void;
   onOpenFashionShop: () => void;
   onOpenBasket: () => void;
+  onOpenRodShop?: () => void;
+  onOpenGrowth?: (subTab?: 'upgrades' | 'skins' | 'meal_plans') => void;
   onFeedFromInventory?: (
     foodItem: FoodItem,
     quantity: number
@@ -54,12 +82,21 @@ interface CatCharacterProps {
     restoredFood: number;
     restoredWater: number;
     gainedXp: number;
+    satietyMinutesAdded?: number;
+    satietyDecayReduction?: number;
   };
   onGiveWater?: () => void;
   onClaimFreeWater?: () => { success: boolean; message: string; remainingMs?: number; gainedWater?: number };
   onBuyFashionItem?: (item: FashionDecorItem) => { success: boolean; message: string };
   onEquipFashionItem?: (item: FashionDecorItem) => boolean;
   onCatClick: (clientX: number, clientY: number) => void;
+  onPlayWithToy?: (
+    toyId: string,
+    clientX?: number,
+    clientY?: number
+  ) => { gainedCoins: number; success: boolean; ratePercent: number; toyName: string };
+  autoOpenFeedModal?: boolean;
+  onResetAutoOpenFeed?: () => void;
 }
 
 interface LocalPopupItem {
@@ -70,32 +107,13 @@ interface LocalPopupItem {
   isCrit: boolean;
 }
 
-interface DecorPosition {
-  x: number; // percentage (0 - 100)
-  y: number; // percentage (0 - 100)
-}
 
-const DEFAULT_BALL_POS: DecorPosition = { x: 12, y: 78 };
-const DEFAULT_BOWL_POS: DecorPosition = { x: 86, y: 78 };
-
-const loadSavedDecorPos = (key: string, defaultPos: DecorPosition): DecorPosition => {
-  try {
-    const saved = localStorage.getItem(key);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-        return {
-          x: Math.max(6, Math.min(94, parsed.x)),
-          y: Math.max(10, Math.min(92, parsed.y)),
-        };
-      }
-    }
-  } catch {}
-  return defaultPos;
-};
-
-export const CatCharacter: React.FC<CatCharacterProps> = ({
+export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
   currentSkin,
+  catName,
+  username,
+  catAvatar,
+  onOpenAvatarPicker,
   isCatActive,
   actualClickPower,
   autoFishRate,
@@ -104,43 +122,104 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
   isFrenzy,
   food,
   water,
+  basketCount = 0,
   foodInventory = {},
+  ownedHats = [],
   equippedHat = '',
   equippedClothes = '',
-  equippedDecor = { bowl: 'bowl_clay', ball: 'ball_yarn_red', rug: 'rug_peach' },
+  ownedRoomDecor = ['bowl_clay', 'ball_yarn_red', 'rug_peach', 'room_go_co_dien'],
+  equippedDecor = { bowl: 'bowl_clay', ball: 'ball_yarn_red', rug: 'rug_peach', room: 'room_go_co_dien' },
   lastWaterGiftClaimedAt = 0,
+  satietyExpiresAt: _satietyExpiresAt = 0,
+  satietyTotalDurationMs: _satietyTotalDurationMs = 0,
+  zeroDecayUntil: _zeroDecayUntil = 0,
+  satietyDecayReduction: _satietyDecayReduction = 1.0,
+  satietyFoodName: _satietyFoodName = '',
+  satietyFoodTier: _satietyFoodTier = 'low',
   levelInfo,
   catStage,
   onOpenFoodShop,
   onOpenFashionShop,
   onOpenBasket,
+  onOpenGrowth,
   onFeedFromInventory,
-  onGiveWater,
   onClaimFreeWater,
+  onEquipFashionItem,
   onCatClick,
+  onPlayWithToy,
+  autoOpenFeedModal,
+  onResetAutoOpenFeed,
 }) => {
   const [isPressed, setIsPressed] = useState(false);
   const [catSquishAnim, setCatSquishAnim] = useState(false);
   const [isFeedModalOpen, setIsFeedModalOpen] = useState(false);
-  const [ballBounceAnim, setBallBounceAnim] = useState(false);
   const [bowlClickAnim, setBowlClickAnim] = useState(false);
   const [selectedFoodId, setSelectedFoodId] = useState<string>(FOOD_SHOP_CATALOG[0]?.id || '01_thuc_an_kho');
   const [feedQuantity, setFeedQuantity] = useState<number>(1);
   const [feedToast, setFeedToast] = useState<string | null>(null);
   const [localPopups, setLocalPopups] = useState<LocalPopupItem[]>([]);
 
-  // Tọa độ vị trí kéo thả của Bát Ăn & Quả Banh trong phòng
-  const playStageRef = useRef<HTMLDivElement | null>(null);
-  const [ballPos, setBallPos] = useState<DecorPosition>(() =>
-    loadSavedDecorPos('purr_ball_pos', DEFAULT_BALL_POS)
+  // Chế độ chọn phòng nền background
+  const [isRoomPickerOpen, setIsRoomPickerOpen] = useState(false);
+
+  // Chế độ di chuyển, xoay & gắn mũ
+  const [isFittingHatOpen, setIsFittingHatOpen] = useState(false);
+  const [hatTransform, setHatTransform] = useState<HatFittingState>(() =>
+    getSavedHatTransform(equippedHat)
   );
+  const [isDraggingHat, setIsDraggingHat] = useState(false);
+  const [hatToast, setHatToast] = useState<string | null>(null);
+  const hatDragStartRef = useRef<{
+    startX: number;
+    startY: number;
+    initialX: number;
+    initialY: number;
+    hasMoved: boolean;
+  } | null>(null);
+
+  const showHatToast = (msg: string) => {
+    setHatToast(msg);
+    setTimeout(() => setHatToast(null), 2500);
+  };
+
+  useEffect(() => {
+    if (equippedHat) {
+      setHatTransform(getSavedHatTransform(equippedHat));
+    }
+  }, [equippedHat]);
+
+  // Đồng bộ vị trí vật trang trí (bát ăn, đồ chơi, mũ) khi được kéo chỉnh ở Shop Thời Trang hoặc Sảnh
+  useEffect(() => {
+    const handleSync = () => {
+      setBowlPos(loadSavedDecorPos('purr_bowl_pos', DEFAULT_BOWL_POS));
+      setToyPositions({
+        0: loadSavedDecorPos('purr_toy_pos_0', loadSavedDecorPos('purr_ball_pos', DEFAULT_TOY_POSITIONS[0])),
+        1: loadSavedDecorPos('purr_toy_pos_1', DEFAULT_TOY_POSITIONS[1]),
+        2: loadSavedDecorPos('purr_toy_pos_2', DEFAULT_TOY_POSITIONS[2]),
+      });
+      if (equippedHat) {
+        setHatTransform(getSavedHatTransform(equippedHat));
+      }
+    };
+    window.addEventListener(DECOR_POS_CHANGED_EVENT, handleSync);
+    return () => window.removeEventListener(DECOR_POS_CHANGED_EVENT, handleSync);
+  }, [equippedHat]);
+
+  // Tọa độ vị trí kéo thả của Bát Ăn & 3 Đồ Chơi trong phòng
+  const playStageRef = useRef<HTMLDivElement | null>(null);
+  const [toyPositions, setToyPositions] = useState<{ [index: number]: DecorPosition }>(() => ({
+    0: loadSavedDecorPos('purr_toy_pos_0', loadSavedDecorPos('purr_ball_pos', DEFAULT_TOY_POSITIONS[0])),
+    1: loadSavedDecorPos('purr_toy_pos_1', DEFAULT_TOY_POSITIONS[1]),
+    2: loadSavedDecorPos('purr_toy_pos_2', DEFAULT_TOY_POSITIONS[2]),
+  }));
   const [bowlPos, setBowlPos] = useState<DecorPosition>(() =>
     loadSavedDecorPos('purr_bowl_pos', DEFAULT_BOWL_POS)
   );
-  const [draggingItem, setDraggingItem] = useState<'ball' | 'bowl' | null>(null);
+  const [draggingItem, setDraggingItem] = useState<string | null>(null);
+  const [bouncingToyIndex, setBouncingToyIndex] = useState<number | null>(null);
 
   const dragStartRef = useRef<{
-    item: 'ball' | 'bowl';
+    item: string;
     startX: number;
     startY: number;
     currentX: number;
@@ -149,21 +228,238 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
   } | null>(null);
 
   const catContainerRef = useRef<HTMLDivElement | null>(null);
+  const lastPetMeowRef = useRef<number>(0);
+  const [petSpeech, setPetSpeech] = useState<string | null>(null);
+  const petSpeechTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (autoOpenFeedModal) {
+      setIsFeedModalOpen(true);
+      if (onResetAutoOpenFeed) onResetAutoOpenFeed();
+    }
+  }, [autoOpenFeedModal, onResetAutoOpenFeed]);
 
   const curHat = getFashionItemById(equippedHat);
   const curClothes = getFashionItemById(equippedClothes);
   const curBowl = getFashionItemById(equippedDecor?.bowl || 'bowl_clay');
-  const curBall = getFashionItemById(equippedDecor?.ball || 'ball_yarn_red');
   const curRug = getFashionItemById(equippedDecor?.rug || 'rug_peach');
+  const curRoom = getFashionItemById(equippedDecor?.room || 'room_go_co_dien');
 
-  const handleBallClick = (e?: React.MouseEvent | React.PointerEvent) => {
+  // Danh sách tối đa 3 đồ chơi đang gắn trên sảnh phòng
+  const equippedBallsList: string[] = useMemo(() => {
+    if (Array.isArray(equippedDecor?.balls) && equippedDecor.balls.length > 0) {
+      return equippedDecor.balls.slice(0, 3);
+    }
+    return [equippedDecor?.ball || 'ball_yarn_red'];
+  }, [equippedDecor?.balls, equippedDecor?.ball]);
+
+  // Danh sách phòng nền đã sở hữu
+  const ownedRoomsList = FASHION_DECOR_CATALOG.filter(
+    (item) => item.category === 'rooms' && (ownedRoomDecor.includes(item.id) || item.price === 0)
+  );
+
+  // Danh sách mũ đã sở hữu
+  const ownedHatsList = FASHION_DECOR_CATALOG.filter(
+    (item) =>
+      item.category === 'hats' &&
+      (ownedHats.includes(item.id) ||
+        (item.id === 'hat_hai_tac' && ownedHats.includes('hat_pirate')) ||
+        (item.id === 'hat_phu_thuy' && ownedHats.includes('hat_wizard')) ||
+        (item.id === 'hat_len_xam' && ownedHats.includes('hat_warm_beanie')) ||
+        (item.id === 'hat_rong_vanh' && ownedHats.includes('hat_straw')) ||
+        (item.id === 'hat_vuong_mien_hoang_gia' && ownedHats.includes('hat_crown')) ||
+        item.price === 0)
+  );
+
+  // Kéo di chuyển trực tiếp mũ trên đầu mèo
+  const handleHatPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+    hatDragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: hatTransform.offsetX,
+      initialY: hatTransform.offsetY,
+      hasMoved: false,
+    };
+    setIsDraggingHat(true);
+  };
+
+  const handleHatPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!hatDragStartRef.current) return;
+    const dx = e.clientX - hatDragStartRef.current.startX;
+    const dy = e.clientY - hatDragStartRef.current.startY;
+    if (!hatDragStartRef.current.hasMoved && Math.hypot(dx, dy) > 2) {
+      hatDragStartRef.current.hasMoved = true;
+    }
+    if (hatDragStartRef.current.hasMoved) {
+      const nextX = Math.max(-80, Math.min(80, Math.round(hatDragStartRef.current.initialX + dx)));
+      const nextY = Math.max(-100, Math.min(60, Math.round(hatDragStartRef.current.initialY + dy)));
+      setHatTransform((prev) => ({
+        ...prev,
+        offsetX: nextX,
+        offsetY: nextY,
+      }));
+    }
+  };
+
+  const handleHatPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+    if (!hatDragStartRef.current) return;
+    const wasDragging = hatDragStartRef.current.hasMoved;
+    hatDragStartRef.current = null;
+    setIsDraggingHat(false);
+    if (wasDragging) {
+      soundManager.playPop(1.1);
+      setHatTransform((prev) => {
+        let finalX = prev.offsetX;
+        let finalY = prev.offsetY;
+        // Hút nam châm nhẹ về tâm nếu kéo gần tâm đầu (< 10px)
+        if (Math.hypot(finalX, finalY) < 10) {
+          finalX = 0;
+          finalY = 0;
+          showHatToast('🎯 Mũ đã tự động gắn vào tâm đầu!');
+        }
+        const updated = { ...prev, offsetX: finalX, offsetY: finalY };
+        if (curHat) {
+          saveHatTransform(curHat.id, updated);
+        }
+        return updated;
+      });
+    }
+  };
+
+  // Điều chỉnh xoay góc
+  const handleRotateHat = (angle: number) => {
+    setHatTransform((prev) => {
+      const clamped = Math.max(-60, Math.min(60, angle));
+      const updated = { ...prev, rotation: clamped };
+      if (curHat) saveHatTransform(curHat.id, updated);
+      return updated;
+    });
+  };
+
+  const handleNudgeRotate = (delta: number) => {
+    soundManager.playPop(1.05);
+    setHatTransform((prev) => {
+      const next = Math.max(-60, Math.min(60, prev.rotation + delta));
+      const updated = { ...prev, rotation: next };
+      if (curHat) saveHatTransform(curHat.id, updated);
+      return updated;
+    });
+  };
+
+  // Điều chỉnh vị trí qua D-pad
+  const handleNudgePosition = (dx: number, dy: number) => {
+    soundManager.playPop(1.05);
+    setHatTransform((prev) => {
+      const nextX = Math.max(-80, Math.min(80, prev.offsetX + dx));
+      const nextY = Math.max(-100, Math.min(60, prev.offsetY + dy));
+      const updated = { ...prev, offsetX: nextX, offsetY: nextY };
+      if (curHat) saveHatTransform(curHat.id, updated);
+      return updated;
+    });
+  };
+
+  // Điều chỉnh tỉ lệ phóng to/thu nhỏ
+  const handleScaleHat = (newScale: number) => {
+    setHatTransform((prev) => {
+      const clamped = Math.max(0.7, Math.min(1.4, Math.round(newScale * 100) / 100));
+      const updated = { ...prev, scale: clamped };
+      if (curHat) saveHatTransform(curHat.id, updated);
+      return updated;
+    });
+  };
+
+  // GẮN MŨ CHẮC CHẮN (Khóa vị trí & hoàn tất)
+  const handleAttachAndLockHat = () => {
+    soundManager.playUpgrade();
+    const updated: HatFittingState = {
+      ...hatTransform,
+      isAttached: true,
+    };
+    setHatTransform(updated);
+    if (curHat) {
+      saveHatTransform(curHat.id, updated);
+    }
+    setIsFittingHatOpen(false);
+    showHatToast(`📌 Đã gắn ${curHat?.name || 'mũ'} chắc chắn lên đầu Boss! 🐾`);
+  };
+
+  // GẮN CHUẨN VÀO ĐẦU (Snap về vị trí cân xứng)
+  const handleSnapHatToHead = () => {
+    soundManager.playPop(1.2);
+    const updated: HatFittingState = {
+      offsetX: 0,
+      offsetY: 0,
+      rotation: 0,
+      scale: 1.0,
+      isAttached: true,
+    };
+    setHatTransform(updated);
+    if (curHat) {
+      saveHatTransform(curHat.id, updated);
+    }
+    showHatToast('🎯 Đã gắn mũ ngay ngắn vào đỉnh đầu Boss!');
+  };
+
+  // Tháo mũ
+  const handleUnequipHat = () => {
+    if (curHat && onEquipFashionItem) {
+      onEquipFashionItem(curHat);
+      soundManager.playPop();
+      setIsFittingHatOpen(false);
+      showHatToast(`Đã tháo ${curHat.name}!`);
+    }
+  };
+
+  const handleToyClick = (e?: React.MouseEvent | React.PointerEvent, idx: number = 0) => {
     if (e) e.stopPropagation();
-    soundManager.playPop();
-    setBallBounceAnim(true);
-    setTimeout(() => setBallBounceAnim(false), 450);
+    const ballId = equippedBallsList[idx] || 'ball_yarn_red';
+
+    // Animation nảy tưng của đồ chơi
+    setBouncingToyIndex(idx);
+    setTimeout(() => setBouncingToyIndex(null), 400);
+
+    // Mèo phản ứng squish thích thú khi vờn đồ chơi
+    setCatSquishAnim(true);
+    setTimeout(() => setCatSquishAnim(false), 180);
+
     const cx = e ? e.clientX : window.innerWidth / 2;
     const cy = e ? e.clientY : window.innerHeight / 2;
-    onCatClick(cx, cy);
+
+    let gained = 0;
+    let isSuccess = false;
+    let ratePercent = 35;
+
+    if (onPlayWithToy) {
+      const res = onPlayWithToy(ballId, cx, cy);
+      gained = res.gainedCoins;
+      isSuccess = res.success;
+      ratePercent = res.ratePercent;
+    } else {
+      soundManager.playPop(1.2 + idx * 0.1);
+    }
+
+    // Hiển thị popup cục bộ ngay tại vị trí của đồ chơi trong phòng
+    const pos = toyPositions[idx] || DEFAULT_TOY_POSITIONS[idx] || { x: 14 + idx * 22, y: 76 };
+    const popupText = isSuccess ? `+${gained} 🪙` : `🐾 Vui đùa! (${ratePercent}%)`;
+    const newPopup: LocalPopupItem = {
+      id: `pop_toy_${Date.now()}_${Math.random()}`,
+      xPercent: pos.x,
+      yPercent: Math.max(12, pos.y - 10),
+      text: popupText,
+      isCrit: isSuccess,
+    };
+    setLocalPopups((prev) => [...prev.slice(-6), newPopup]);
+    setTimeout(() => {
+      setLocalPopups((prev) => prev.filter((p) => p.id !== newPopup.id));
+    }, 850);
   };
 
   const handleBowlClick = (e?: React.MouseEvent | React.PointerEvent) => {
@@ -177,14 +473,21 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
   // Xử lý giữ và kéo (Drag & Drop) đồ vật trong phòng
   const handleItemPointerDown = (
     e: React.PointerEvent<HTMLDivElement>,
-    item: 'ball' | 'bowl'
+    item: string
   ) => {
     e.stopPropagation();
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {}
 
-    const curPos = item === 'ball' ? ballPos : bowlPos;
+    let curPos: DecorPosition;
+    if (item.startsWith('toy_')) {
+      const idx = parseInt(item.replace('toy_', ''), 10) || 0;
+      curPos = toyPositions[idx] || DEFAULT_TOY_POSITIONS[idx] || { x: 20, y: 80 };
+    } else {
+      curPos = bowlPos;
+    }
+
     dragStartRef.current = {
       item,
       startX: e.clientX,
@@ -215,8 +518,9 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
         dragStartRef.current.currentX = nextX;
         dragStartRef.current.currentY = nextY;
 
-        if (item === 'ball') {
-          setBallPos({ x: nextX, y: nextY });
+        if (item.startsWith('toy_')) {
+          const idx = parseInt(item.replace('toy_', ''), 10) || 0;
+          setToyPositions((prev) => ({ ...prev, [idx]: { x: nextX, y: nextY } }));
         } else {
           setBowlPos({ x: nextX, y: nextY });
         }
@@ -226,7 +530,7 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
 
   const handleItemPointerUp = (
     e: React.PointerEvent<HTMLDivElement>,
-    item: 'ball' | 'bowl'
+    item: string
   ) => {
     e.stopPropagation();
     try {
@@ -243,14 +547,19 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
 
     if (wasDragging && finalPos) {
       soundManager.playPop(1.15);
-      if (item === 'ball') {
-        localStorage.setItem('purr_ball_pos', JSON.stringify(finalPos));
+      if (item.startsWith('toy_')) {
+        const idx = parseInt(item.replace('toy_', ''), 10) || 0;
+        saveDecorPos(`purr_toy_pos_${idx}`, finalPos);
+        if (idx === 0) {
+          saveDecorPos('purr_ball_pos', finalPos);
+        }
       } else {
-        localStorage.setItem('purr_bowl_pos', JSON.stringify(finalPos));
+        saveDecorPos('purr_bowl_pos', finalPos);
       }
     } else {
-      if (item === 'ball') {
-        handleBallClick(e);
+      if (item.startsWith('toy_')) {
+        const idx = parseInt(item.replace('toy_', ''), 10) || 0;
+        handleToyClick(e, idx);
       } else {
         handleBowlClick(e);
       }
@@ -270,6 +579,27 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
 
     // Spawn localized cute cuddle popup in sanctuary clicker stage
     const isCrit = Math.random() < (0.15 + (isFrenzy ? 0.35 : 0));
+    if (isCrit && Date.now() - lastPetMeowRef.current > 1800) {
+      lastPetMeowRef.current = Date.now();
+      soundManager.playCatMeow(currentSkin.sound);
+    }
+
+    if (!isCatHungry) {
+      const cuteQuotes = [
+        'Meow~! Boss yêu Sen 💖',
+        'Gừ gừ... thích quá meow~ 🐾',
+        'Sen vuốt ve khéo ghê! ✨',
+        'Cưng xỉu luôn á meow~ 💕',
+        'Boss chuẩn bị đi săn cá đây! 🐟',
+      ];
+      if (Math.random() < 0.4) {
+        const q = cuteQuotes[Math.floor(Math.random() * cuteQuotes.length)];
+        setPetSpeech(q);
+        if (petSpeechTimeoutRef.current) clearTimeout(petSpeechTimeoutRef.current);
+        petSpeechTimeoutRef.current = setTimeout(() => setPetSpeech(null), 1800);
+      }
+    }
+
     const earned = Math.max(1, Math.round(actualClickPower * (isCrit ? 2.5 : 1)));
     const newPopup: LocalPopupItem = {
       id: `pop_${Date.now()}_${Math.random()}`,
@@ -299,9 +629,11 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
     triggerPetting(rect.left + rect.width / 2, rect.top + rect.height / 2);
   };
 
-  const isWellCared = food >= 60 && water >= 60;
-  const isHungry = food < 25;
-  const isThirsty = water < 25;
+  const isSatiated = (_satietyExpiresAt || 0) > Date.now();
+  const isWellCared = isSatiated || (food >= 60 && water >= 60);
+  const isHungry = !isSatiated && food < 25;
+  const isCatHungry = !isSatiated && food < 15;
+  const isThirsty = !isSatiated && water < 25;
 
   const { palette } = currentSkin;
   const isMouthOpen = isPressed || isCatActive;
@@ -310,46 +642,83 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
     : (currentSkin.image || currentSkin.imageOpen);
 
   return (
-    <div className="flex flex-col w-full max-w-xl mx-auto px-gutter py-space-sm gap-space-md select-none font-body-md text-on-surface">
+    <div className="flex flex-col w-full max-w-xl mx-auto px-2 sm:px-gutter py-1 sm:py-space-sm gap-2 sm:gap-space-md select-none font-body-md text-on-surface">
       {/* 1. Sub-header & Cat Level Status Card */}
-      <div className="w-full bg-surface-container-lowest rounded-lg p-space-md shadow-[0_4px_16px_rgba(122,105,104,0.08)] flex flex-col gap-space-xs relative overflow-hidden border border-outline-variant/30">
+      <div className="w-full bg-surface-container-lowest rounded-lg p-2.5 sm:p-space-md shadow-[0_4px_16px_rgba(122,105,104,0.08)] flex flex-col gap-1 sm:gap-space-xs relative overflow-hidden border border-outline-variant/30">
         <div className="absolute -right-4 -top-4 w-20 h-20 bg-primary-fixed/30 rounded-full blur-xl pointer-events-none" />
-        <div className="flex items-center justify-between gap-space-sm">
-          <div className="flex items-center gap-space-sm min-w-0">
-            <div className="relative shrink-0">
-              <div className="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center shadow-inner overflow-hidden border-2 border-primary-fixed text-2xl">
-                {currentSkin.image ? (
-                  <img
-                    src={currentSkin.image}
-                    alt={currentSkin.name}
-                    className="w-full h-full object-cover"
-                    draggable={false}
-                  />
-                ) : (
-                  <span>{currentSkin.icon || '🐱'}</span>
-                )}
-              </div>
-              <span className="absolute -bottom-1 -right-1 bg-secondary text-on-secondary font-label-sm text-label-sm px-1.5 py-0.5 rounded-full shadow-sm font-bold">
-                Lv.{levelInfo.level}
+        <div className="flex items-center justify-between gap-2">
+          {/* Left Avatar & Level Badge - Click to pick Avatar */}
+          <div
+            className={`relative shrink-0 w-12 h-12 mr-1 ${onOpenAvatarPicker ? 'cursor-pointer group' : ''}`}
+            onClick={onOpenAvatarPicker}
+            role={onOpenAvatarPicker ? 'button' : undefined}
+            tabIndex={onOpenAvatarPicker ? 0 : undefined}
+            title="Nhấn để đổi ảnh đại diện Mèo Cưng"
+          >
+            <div className="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center shadow-inner overflow-hidden border-2 border-primary-fixed text-2xl group-hover:ring-2 group-hover:ring-primary/70 group-hover:scale-105 active:scale-95 transition-all">
+              {catAvatar ? (
+                <img
+                  src={catAvatar}
+                  alt={catName || currentSkin.name}
+                  className="w-full h-full object-cover"
+                  draggable={false}
+                />
+              ) : currentSkin.image ? (
+                <img
+                  src={currentSkin.image}
+                  alt={currentSkin.name}
+                  className="w-full h-full object-cover"
+                  draggable={false}
+                />
+              ) : (
+                <span>{currentSkin.icon || '🐱'}</span>
+              )}
+            </div>
+            {onOpenAvatarPicker && (
+              <span className="absolute -top-1 -right-1 z-10 bg-amber-400 text-amber-950 text-[10px] w-4 h-4 rounded-full flex items-center justify-center shadow-xs border border-white font-bold opacity-85 group-hover:opacity-100 group-hover:scale-110 transition-all">
+                📷
+              </span>
+            )}
+            <span
+              className={`absolute -bottom-1 -right-1 z-10 bg-emerald-600 text-white text-[10px] px-1.5 py-0.2 rounded-full shadow-sm font-black border border-white whitespace-nowrap leading-tight ${
+                onOpenGrowth ? 'cursor-pointer hover:bg-emerald-700 active:scale-95 transition-all' : ''
+              }`}
+              onClick={(e) => {
+                if (onOpenGrowth) {
+                  e.stopPropagation();
+                  onOpenGrowth('upgrades');
+                }
+              }}
+              title="Nhấn để xem Nâng Cấp Kỹ Năng"
+            >
+              Lv.{levelInfo.level}
+            </span>
+          </div>
+
+          {/* Middle Info Row */}
+          <div className="min-w-0 flex-1 flex flex-col justify-center">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h2 className="text-sm sm:text-base font-black text-on-surface truncate">
+                {catName || currentSkin.name}
+              </h2>
+              {username && (
+                <span className="text-[10px] sm:text-xs text-on-surface-variant font-semibold bg-surface-container-high px-1.5 py-0.5 rounded-md">
+                  @{username}
+                </span>
+              )}
+              <span className="bg-primary/10 text-primary text-[10px] sm:text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
+                {catStage.label}
               </span>
             </div>
-            <div className="min-w-0 flex flex-col">
-              <div className="flex items-center gap-space-xs">
-                <h2 className="font-headline-sm text-headline-sm text-on-surface truncate font-bold">
-                  {currentSkin.name}
-                </h2>
-                <span className="bg-surface-container text-primary font-label-sm text-label-sm px-2 py-0.5 rounded-full shrink-0 font-bold">
-                  {catStage.label}
-                </span>
-              </div>
-              <p className="font-body-sm text-body-sm text-on-surface-variant">
-                Giai đoạn Tăng trưởng • Tinh nghịch
-              </p>
-            </div>
+            <p className="text-[11px] text-on-surface-variant font-medium leading-tight truncate mt-0.5">
+              Giai đoạn Tăng trưởng • Tinh nghịch
+            </p>
           </div>
-          <div className="bg-secondary-container/60 px-space-sm py-1 rounded-full flex items-center gap-1 shrink-0 shadow-sm border border-secondary/20">
-            <span className="material-symbols-outlined text-on-secondary-container text-[18px]">bolt</span>
-            <span className="font-label-md text-label-md text-on-secondary-container font-bold">
+
+          {/* Right Auto-fish Rate Pill */}
+          <div className="h-8 px-2.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 shadow-2xs flex items-center gap-1 shrink-0 whitespace-nowrap">
+            <span className="material-symbols-outlined text-emerald-600 text-[16px]">bolt</span>
+            <span className="text-xs sm:text-sm font-black tracking-tight">
               +{formatNumber(autoFishRate)} 🐟/s
             </span>
           </div>
@@ -380,30 +749,176 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
       {/* 2. Interactive Cozy Sanctuary Clicker Stage */}
       <div
         ref={catContainerRef}
-        className="w-full bg-surface-container-low rounded-xl p-space-md shadow-[0_6px_20px_rgba(122,105,104,0.08)] relative overflow-hidden flex flex-col items-center border border-outline-variant/30"
+        className="w-full bg-surface-container-low rounded-xl p-2 sm:p-space-md shadow-[0_6px_20px_rgba(122,105,104,0.08)] relative overflow-hidden flex flex-col items-center border border-outline-variant/30"
       >
-        {/* Living Background Room Elements */}
-        <div className="absolute inset-0 pointer-events-none opacity-40">
-          <div className="absolute top-3 left-4 w-12 h-16 bg-surface-container rounded-t-full" />
-          <div className="absolute top-2 right-8 flex items-center gap-1">
-            <span className="material-symbols-outlined text-primary-fixed-dim text-lg">wb_sunny</span>
-            <div className="w-16 h-8 bg-surface-bright/50 rounded-full" />
+        {/* Living Background Room Art */}
+        {curRoom?.image ? (
+          <div className="absolute inset-0 z-0 pointer-events-none select-none overflow-hidden rounded-xl">
+            <img
+              src={curRoom.image}
+              alt={curRoom.name}
+              className="w-full h-full object-cover object-bottom transition-all duration-700 pointer-events-none select-none"
+              draggable={false}
+            />
+            {/* Soft subtle gradient to keep UI buttons and texts readable */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/15 pointer-events-none" />
           </div>
-          <div className="absolute bottom-6 left-3 w-10 h-24 bg-surface-container-high rounded-full" />
+        ) : (
+          <div className="absolute inset-0 pointer-events-none opacity-40">
+            <div className="absolute top-3 left-4 w-12 h-16 bg-surface-container rounded-t-full" />
+            <div className="absolute top-2 right-8 flex items-center gap-1">
+              <span className="material-symbols-outlined text-primary-fixed-dim text-lg">wb_sunny</span>
+              <div className="w-16 h-8 bg-surface-bright/50 rounded-full" />
+            </div>
+            <div className="absolute bottom-6 left-3 w-10 h-24 bg-surface-container-high rounded-full" />
+          </div>
+        )}
+
+        {/* Floating Hat Fitting Toast */}
+        {hatToast && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 border border-primary/20 animate-bounce-in text-xs font-bold pointer-events-none">
+            <span className="material-symbols-outlined text-primary text-[18px]">check_circle</span>
+            <span>{hatToast}</span>
+          </div>
+        )}
+
+        {/* Cozy Room Floating Info Tag & Hat Fitting Toggle Button (Đồng đều chiều cao h-7.5 sm:h-8, chuẩn mobile) */}
+        <div className="z-10 flex items-center justify-between w-full px-1 mb-1.5 sm:mb-2 gap-1.5">
+          {/* Room Selector Toggle Pill */}
+          <button
+            type="button"
+            className={`h-7 sm:h-8 px-2 sm:px-2.5 rounded-full backdrop-blur-md text-[11px] sm:text-xs font-bold flex items-center gap-1 sm:gap-1.5 transition-all cursor-pointer shadow-sm border whitespace-nowrap shrink-0 ${
+              isRoomPickerOpen
+                ? 'bg-amber-500 text-white border-amber-400 ring-2 ring-amber-300/40 shadow-md scale-102'
+                : 'bg-surface-container-lowest/85 text-on-surface hover:text-primary border-outline-variant/30 hover:border-primary/40'
+            }`}
+            onClick={() => {
+              soundManager.playPop();
+              setIsRoomPickerOpen(!isRoomPickerOpen);
+              if (isFittingHatOpen) setIsFittingHatOpen(false);
+            }}
+            title="Đổi phòng nền background cho mèo"
+          >
+            <span className="text-sm">{curRoom?.icon || '🏡'}</span>
+            <span className="max-w-[75px] min-[360px]:max-w-[100px] sm:max-w-[140px] truncate">
+              {curRoom?.name || 'Phòng Gỗ'}
+            </span>
+            <span className="material-symbols-outlined text-[13px] sm:text-[14px]">
+              {isRoomPickerOpen ? 'expand_less' : 'swap_horiz'}
+            </span>
+          </button>
+
+          {/* Hat Fitting Toggle Button */}
+          <button
+            type="button"
+            className={`h-7 sm:h-8 px-2 sm:px-2.5 rounded-full backdrop-blur-md text-[11px] sm:text-xs font-bold flex items-center gap-1 sm:gap-1.5 transition-all cursor-pointer shadow-sm border whitespace-nowrap shrink-0 ${
+              isFittingHatOpen
+                ? 'bg-primary text-on-primary border-primary ring-2 ring-primary/30 shadow-md scale-102'
+                : 'bg-surface-container-lowest/90 text-on-surface hover:text-primary border-outline-variant/30 hover:border-primary/40'
+            }`}
+            onClick={() => {
+              soundManager.playPop();
+              setIsFittingHatOpen(!isFittingHatOpen);
+              if (isRoomPickerOpen) setIsRoomPickerOpen(false);
+            }}
+            title="Mở bảng di chuyển, xoay và gắn mũ cho mèo"
+          >
+            <span className="text-sm">👒</span>
+            <span>{isFittingHatOpen ? 'Đang Chỉnh' : curHat ? 'Chỉnh Mũ' : 'Gắn Mũ'}</span>
+            <span className="material-symbols-outlined text-[13px] sm:text-[14px]">
+              {isFittingHatOpen ? 'expand_less' : 'tune'}
+            </span>
+          </button>
         </div>
 
-        {/* Cozy Room Floating Info Tag */}
-        <div className="z-10 flex items-center gap-1.5 bg-surface-container-lowest/80 backdrop-blur-md px-3 py-1 rounded-full shadow-sm mb-2 border border-outline-variant/20">
-          <span className="material-symbols-outlined text-primary text-[16px]">roofing</span>
-          <span className="font-label-sm text-label-sm text-on-surface font-bold">
-            Căn Phòng Đón Nắng Ấm
-          </span>
-        </div>
+        {/* Quick Room Picker Drawer */}
+        {isRoomPickerOpen && (
+          <div className="z-20 w-full mb-3 bg-surface-container-lowest/95 backdrop-blur-md rounded-2xl p-3 shadow-lg border border-outline-variant/40 animate-fade-in">
+            <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-outline-variant/20">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm">🏡</span>
+                <span className="font-label-sm text-label-sm font-bold text-on-surface">
+                  Chọn Nền Phòng ({ownedRoomsList.length} phòng)
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                {onOpenFashionShop && (
+                  <button
+                    type="button"
+                    className="px-2 py-0.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 text-[11px] font-bold transition-colors cursor-pointer"
+                    onClick={() => {
+                      soundManager.playPop();
+                      onOpenFashionShop();
+                    }}
+                  >
+                    + Thêm phòng
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container text-xs cursor-pointer"
+                  onClick={() => setIsRoomPickerOpen(false)}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Horizontal scroll of owned rooms */}
+            <div className="flex gap-2 overflow-x-auto pb-1.5 pt-0.5 scrollbar-thin">
+              {ownedRoomsList.map((roomItem) => {
+                const isCurrent = (equippedDecor?.room || 'room_go_co_dien') === roomItem.id;
+                return (
+                  <button
+                    key={`quick_room_${roomItem.id}`}
+                    type="button"
+                    className={`shrink-0 w-28 rounded-xl p-1.5 flex flex-col items-center text-left transition-all cursor-pointer border ${
+                      isCurrent
+                        ? 'border-primary bg-primary/10 ring-2 ring-primary/30 shadow-sm scale-102'
+                        : 'border-outline-variant/30 bg-surface-container-lowest hover:border-primary/40 hover:bg-surface-container-low'
+                    }`}
+                    onClick={() => {
+                      if (onEquipFashionItem) {
+                        onEquipFashionItem(roomItem);
+                        soundManager.playUpgrade();
+                        showHatToast(`Đã chuyển sang ${roomItem.name}! 🏡`);
+                      }
+                    }}
+                  >
+                    <div className="w-full h-16 rounded-lg overflow-hidden relative mb-1 bg-surface-container shadow-2xs">
+                      {roomItem.image ? (
+                        <img
+                          src={roomItem.image}
+                          alt={roomItem.name}
+                          className="w-full h-full object-cover object-bottom"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-2xl">
+                          {roomItem.icon}
+                        </div>
+                      )}
+                      {isCurrent && (
+                        <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-white shadow-xs" />
+                      )}
+                    </div>
+                    <span className="font-label-sm text-[11px] font-bold text-on-surface line-clamp-1 w-full text-center">
+                      {roomItem.name}
+                    </span>
+                    <span className="text-[9px] text-on-surface-variant line-clamp-1 w-full text-center">
+                      {roomItem.perk || roomItem.badge}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Center Play Stage & Interactive Cat */}
-        <div ref={playStageRef} className="relative w-full aspect-[4/3] max-h-72 flex items-center justify-center my-space-xs touch-none select-none">
+        <div ref={playStageRef} className="relative w-full aspect-[16/11] sm:aspect-[4/3] max-h-52 sm:max-h-72 flex items-center justify-center my-1 sm:my-space-xs touch-none select-none">
           {/* Rug based on equippedDecor.rug (Nằm ngay bên dưới nhân vật Cat) */}
-          <div className="absolute z-0 w-64 h-64 sm:w-72 sm:h-72 max-w-[94%] max-h-[94%] flex items-center justify-center pointer-events-none select-none transition-all duration-300 translate-y-16 sm:translate-y-17">
+          <div className="absolute z-0 w-48 h-48 sm:w-72 sm:h-72 max-w-[94%] max-h-[94%] flex items-center justify-center pointer-events-none select-none transition-all duration-300 translate-y-11 sm:translate-y-17">
             {curRug?.image ? (
               <img
                 src={curRug.image}
@@ -412,60 +927,76 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
                 draggable={false}
               />
             ) : equippedDecor?.rug === 'rug_cloud' ? (
-              <div className="w-60 h-52 rounded-[2.5rem] bg-sky-200/50 shadow-inner flex items-center justify-center pointer-events-none border border-sky-300/40">
-                <div className="w-52 h-44 rounded-[2rem] bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
-                  <div className="w-44 h-36 rounded-[1.5rem] bg-sky-100/60" />
+              <div className="w-44 h-38 sm:w-60 sm:h-52 rounded-[2rem] sm:rounded-[2.5rem] bg-sky-200/50 shadow-inner flex items-center justify-center pointer-events-none border border-sky-300/40">
+                <div className="w-38 h-32 sm:w-52 sm:h-44 rounded-[1.5rem] sm:rounded-[2rem] bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
+                  <div className="w-32 h-26 sm:w-44 sm:h-36 rounded-[1rem] sm:rounded-[1.5rem] bg-sky-100/60" />
                 </div>
               </div>
             ) : equippedDecor?.rug === 'rug_paw' ? (
-              <div className="w-56 h-56 rounded-full bg-rose-200/50 shadow-inner flex items-center justify-center pointer-events-none border border-rose-300/40">
-                <div className="w-48 h-48 rounded-full bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
-                  <div className="w-40 h-40 rounded-full bg-rose-100/60 flex items-center justify-center">
-                    <span className="text-4xl opacity-30">🐾</span>
+              <div className="w-42 h-42 sm:w-56 sm:h-56 rounded-full bg-rose-200/50 shadow-inner flex items-center justify-center pointer-events-none border border-rose-300/40">
+                <div className="w-36 h-36 sm:w-48 sm:h-48 rounded-full bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
+                  <div className="w-30 h-30 sm:w-40 sm:h-40 rounded-full bg-rose-100/60 flex items-center justify-center">
+                    <span className="text-3xl sm:text-4xl opacity-30">🐾</span>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="w-56 h-56 rounded-full bg-primary-fixed/40 shadow-inner flex items-center justify-center pointer-events-none">
-                <div className="w-48 h-48 rounded-full bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
-                  <div className="w-40 h-40 rounded-full bg-surface-container-low/70" />
+              <div className="w-42 h-42 sm:w-56 sm:h-56 rounded-full bg-primary-fixed/40 shadow-inner flex items-center justify-center pointer-events-none">
+                <div className="w-36 h-36 sm:w-48 sm:h-48 rounded-full bg-surface-container-lowest/90 shadow-sm flex items-center justify-center">
+                  <div className="w-30 h-30 sm:w-40 sm:h-40 rounded-full bg-surface-container-low/70" />
                 </div>
               </div>
             )}
           </div>
 
-          {/* QUẢ BANH / ĐỒ CHƠI TRANG TRÍ SẢNH PHÒNG (KHÔNG NỀN TRẮNG/KHUNG, TỰ DO KÉO THẢ) */}
-          <div
-            style={{
-              left: `${ballPos.x}%`,
-              top: `${ballPos.y}%`,
-            }}
-            className={`absolute -translate-x-1/2 -translate-y-1/2 z-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none transition-transform duration-75 ${
-              draggingItem === 'ball'
-                ? 'scale-125 z-30 drop-shadow-2xl opacity-90'
-                : ballBounceAnim
-                ? '-translate-y-8 rotate-12 scale-125'
-                : 'hover:scale-110 active:scale-95'
-            }`}
-            onPointerDown={(e) => handleItemPointerDown(e, 'ball')}
-            onPointerMove={handleItemPointerMove}
-            onPointerUp={(e) => handleItemPointerUp(e, 'ball')}
-            onPointerCancel={(e) => handleItemPointerUp(e, 'ball')}
-            title={`${curBall?.name || 'Đồ chơi'} (Chạm để chơi / Giữ để di chuyển)`}
-          >
-            {curBall?.image ? (
-              <img
-                src={curBall.image}
-                alt={curBall.name}
-                className="w-14 h-14 sm:w-16 sm:h-16 object-contain filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.22)] select-none pointer-events-none"
-                draggable={false}
-              />
-            ) : (
-              <span className="text-4xl filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.2)] select-none pointer-events-none">
-                {curBall?.icon || '🧶'}
-              </span>
-            )}
-          </div>
+          {/* 3 MÓN ĐỒ CHƠI TRANG TRÍ SẢNH PHÒNG MÈO (TỰ DO KÉO THẢ, CHẠM ĐỂ CHƠI) */}
+          {equippedBallsList.map((ballId, idx) => {
+            const ballItem = getFashionItemById(ballId);
+            if (!ballItem) return null;
+            const pos = toyPositions[idx] || DEFAULT_TOY_POSITIONS[idx] || { x: 14 + idx * 22, y: 76 };
+            const isDraggingThis = draggingItem === `toy_${idx}`;
+            const isBouncingThis = bouncingToyIndex === idx;
+            const toyReward = getToyRewardConfig(ballItem);
+
+            return (
+              <div
+                key={`room_toy_${ballId}_${idx}`}
+                style={{
+                  left: `${pos.x}%`,
+                  top: `${pos.y}%`,
+                }}
+                className={`absolute -translate-x-1/2 -translate-y-1/2 z-20 w-11 h-11 sm:w-14 sm:h-14 max-w-[48px] max-h-[48px] sm:max-w-[56px] sm:max-h-[56px] flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none transition-transform duration-75 ${
+                  isDraggingThis
+                    ? 'scale-125 z-30 drop-shadow-2xl opacity-90'
+                    : isBouncingThis
+                    ? '-translate-y-6 rotate-12 scale-125'
+                    : 'hover:scale-110 active:scale-95'
+                }`}
+                onPointerDown={(e) => handleItemPointerDown(e, `toy_${idx}`)}
+                onPointerMove={handleItemPointerMove}
+                onPointerUp={(e) => handleItemPointerUp(e, `toy_${idx}`)}
+                onPointerCancel={(e) => handleItemPointerUp(e, `toy_${idx}`)}
+                title={`${ballItem.name} (#${idx + 1} • ${toyReward.label} • Chạm chơi với Boss)`}
+              >
+                {ballItem.image ? (
+                  <img
+                    src={ballItem.image}
+                    alt={ballItem.name}
+                    className="w-full h-full object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.18)] select-none pointer-events-none"
+                    draggable={false}
+                  />
+                ) : (
+                  <span className="text-2xl sm:text-3xl filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.18)] select-none pointer-events-none">
+                    {ballItem.icon || '🧶'}
+                  </span>
+                )}
+                {/* Huy hiệu số thứ tự đồ chơi nhỏ */}
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 text-white text-[8px] font-black flex items-center justify-center shadow-xs pointer-events-none border border-white/70">
+                  {idx + 1}
+                </span>
+              </div>
+            );
+          })}
 
           {/* MÁNG ĂN TRANG TRÍ SẢNH PHÒNG (KHÔNG NỀN TRẮNG/KHUNG, TỰ DO KÉO THẢ) */}
           <div
@@ -473,7 +1004,7 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
               left: `${bowlPos.x}%`,
               top: `${bowlPos.y}%`,
             }}
-            className={`absolute -translate-x-1/2 -translate-y-1/2 z-20 flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none transition-transform duration-75 ${
+            className={`absolute -translate-x-1/2 -translate-y-1/2 z-20 w-12 h-12 sm:w-16 sm:h-16 max-w-[52px] max-h-[52px] sm:max-w-[64px] sm:max-h-[64px] flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none transition-transform duration-75 ${
               draggingItem === 'bowl'
                 ? 'scale-125 z-30 drop-shadow-2xl opacity-90'
                 : bowlClickAnim
@@ -490,11 +1021,11 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
               <img
                 src={curBowl.image}
                 alt={curBowl.name}
-                className="w-16 h-16 sm:w-20 sm:h-20 object-contain filter drop-shadow-[0_8px_14px_rgba(0,0,0,0.25)] select-none pointer-events-none"
+                className="w-full h-full object-contain filter drop-shadow-[0_8px_14px_rgba(0,0,0,0.25)] select-none pointer-events-none"
                 draggable={false}
               />
             ) : (
-              <span className="text-4xl filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.2)] select-none pointer-events-none">
+              <span className="text-3xl sm:text-4xl filter drop-shadow-[0_8px_12px_rgba(0,0,0,0.2)] select-none pointer-events-none">
                 {curBowl?.icon || '🥣'}
               </span>
             )}
@@ -510,7 +1041,7 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
 
           {/* Kawaii Cat Hero (Interactive Touch / Pet Target) */}
           <div
-            className={`relative z-10 w-48 h-48 cursor-pointer active:scale-95 transition-transform duration-100 flex items-center justify-center ${
+            className={`relative z-10 w-32 h-32 sm:w-48 sm:h-48 cursor-pointer active:scale-95 transition-transform duration-100 flex items-center justify-center ${
               catSquishAnim || isPressed ? 'scale-110 -rotate-2' : 'hover:scale-105'
             }`}
             id="cat-avatar"
@@ -520,13 +1051,92 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
             tabIndex={0}
             aria-label="Vuốt ve mèo cưng để nhận xu"
           >
-            {/* Equipped Hat on Cat Head */}
+            {/* BONG BÓNG CHAT KHI MÈO ĐÓI (HUNGRY SPEECH BUBBLE) */}
+            {isCatHungry && (
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  soundManager.playPop();
+                  setIsFeedModalOpen(true);
+                }}
+                className="absolute -top-16 sm:-top-20 left-1/2 -translate-x-1/2 z-40 cursor-pointer animate-bounce-gentle select-none pointer-events-auto"
+                title="Mèo đang đói bụng! Chạm để mở túi cho Boss ăn ngay"
+              >
+                <div className="relative bg-white/95 backdrop-blur-md text-slate-800 border-2 border-red-400 hover:border-red-500 rounded-2xl px-3 py-1.5 sm:px-3.5 sm:py-2 shadow-[0_8px_24px_rgba(239,68,68,0.28)] flex items-center gap-1.5 whitespace-nowrap transition-transform hover:scale-105 active:scale-95">
+                  <span className="text-base sm:text-lg animate-pulse">😿</span>
+                  <div className="flex flex-col text-left leading-tight">
+                    <span className="text-[11px] sm:text-xs font-black text-red-600 flex items-center gap-1">
+                      Đói quá meow~! ({Math.round(food)}%)
+                      <span className="px-1.5 py-0.2 rounded-full bg-red-100 text-red-700 text-[9px] font-black">
+                        Không thể câu cá
+                      </span>
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] font-bold text-slate-600">
+                      Cho Boss ăn mới đi câu cá được nhé! 🍱
+                    </span>
+                  </div>
+                  {/* Tail of speech bubble */}
+                  <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-t-[8px] border-t-red-400" />
+                  <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[7px] border-t-white" />
+                </div>
+              </div>
+            )}
+
+            {/* BONG BÓNG CHAT KHI VUỐT VE (PETTING SPEECH BUBBLE) */}
+            {!isCatHungry && petSpeech && (
+              <div className="absolute -top-14 sm:-top-16 left-1/2 -translate-x-1/2 z-40 pointer-events-none animate-bounce-in select-none">
+                <div className="relative bg-white/95 backdrop-blur-md text-amber-950 border-2 border-amber-300 rounded-2xl px-3 py-1 sm:px-3.5 sm:py-1.5 shadow-md flex items-center gap-1.5 whitespace-nowrap text-xs font-black">
+                  <span>🐱</span>
+                  <span>{petSpeech}</span>
+                  <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[7px] border-t-amber-300" />
+                  <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-white" />
+                </div>
+              </div>
+            )}
+
+            {/* Equipped Hat on Cat Head (Hỗ trợ kéo thả, xoay và gắn vị trí) */}
             {curHat && (
               <div
-                className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 text-3xl filter drop-shadow-md pointer-events-none animate-bounce-gentle"
-                title={curHat.name}
+                style={{
+                  transform: `translate(calc(-50% + ${hatTransform.offsetX}px), ${hatTransform.offsetY}px) rotate(${hatTransform.rotation}deg) scale(${hatTransform.scale})`,
+                  transformOrigin: 'bottom center',
+                }}
+                className={`absolute -top-4 sm:-top-6 left-1/2 z-20 flex items-center justify-center select-none touch-none transition-transform duration-75 ${
+                  isFittingHatOpen
+                    ? isDraggingHat
+                      ? 'cursor-grabbing p-1 sm:p-1.5 rounded-2xl ring-4 ring-primary ring-offset-2 ring-offset-surface-container-low bg-primary/20 shadow-2xl scale-105'
+                      : 'cursor-grab p-1 sm:p-1.5 rounded-2xl ring-2 ring-primary ring-offset-2 ring-offset-surface-container-low bg-primary/10 shadow-lg hover:scale-105'
+                    : 'pointer-events-none animate-bounce-gentle'
+                }`}
+                onPointerDown={isFittingHatOpen ? handleHatPointerDown : undefined}
+                onPointerMove={isFittingHatOpen ? handleHatPointerMove : undefined}
+                onPointerUp={isFittingHatOpen ? handleHatPointerUp : undefined}
+                onPointerCancel={isFittingHatOpen ? handleHatPointerUp : undefined}
+                title={isFittingHatOpen ? 'Kéo để di chuyển vị trí mũ trên đầu Boss' : curHat.name}
               >
-                {curHat.icon}
+                {curHat.image ? (
+                  <img
+                    src={curHat.image}
+                    alt={curHat.name}
+                    className="w-18 h-18 sm:w-24 sm:h-24 object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.25)] select-none pointer-events-none"
+                    draggable={false}
+                  />
+                ) : (
+                  <span className="text-2xl sm:text-3xl filter drop-shadow-md select-none pointer-events-none">{curHat.icon}</span>
+                )}
+
+                {/* Badge hiển thị góc xoay hoặc trạng thái khi đang chỉnh */}
+                {isFittingHatOpen && (
+                  <div className="absolute -top-2 -right-2 bg-primary text-on-primary rounded-full px-1.5 py-0.5 flex items-center gap-0.5 text-[9px] font-bold shadow-md pointer-events-none animate-pulse">
+                    <span>
+                      {isDraggingHat
+                        ? 'Đang kéo'
+                        : hatTransform.rotation !== 0
+                        ? `${hatTransform.rotation}°`
+                        : 'Chỉnh'}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -646,99 +1256,392 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
           </div>
         </div>
 
+        {/* 👒 BẢNG ĐIỀU KHIỂN CHỈNH VỊ TRÍ, XOAY & GẮN MŨ */}
+        {isFittingHatOpen && (
+          <div className="z-30 w-full max-w-md my-2 bg-surface-container-lowest/95 backdrop-blur-md rounded-2xl p-3.5 shadow-xl border-2 border-primary/40 flex flex-col gap-3 animate-fade-in text-on-surface">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-outline-variant/20">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-xl overflow-hidden shrink-0 border border-primary/20">
+                  {curHat?.image ? (
+                    <img src={curHat.image} alt={curHat.name} className="w-full h-full object-contain p-0.5" />
+                  ) : (
+                    curHat?.icon || '👒'
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-sm text-on-surface">
+                      {curHat ? curHat.name : 'Chưa Chọn Mũ'}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/15 text-primary font-bold">
+                      {curHat ? (hatTransform.isAttached ? 'Đang Gắn' : 'Đang Chỉnh') : 'Chưa Có Mũ'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-on-surface-variant font-medium">
+                    {curHat
+                      ? 'Kéo trực tiếp mũ trên đầu Boss hoặc dùng thanh điều khiển bên dưới'
+                      : 'Chọn một chiếc mũ đã có bên dưới để đội và chỉnh vị trí'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="w-7 h-7 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-on-surface cursor-pointer text-xs font-bold transition-colors"
+                onClick={() => setIsFittingHatOpen(false)}
+                title="Đóng bảng chỉnh"
+              >
+                ✕
+              </button>
+            </div>
+
+            {curHat ? (
+              <>
+                {/* 1. Thanh trượt Xoay góc (Rotate) */}
+                <div className="flex flex-col gap-1 bg-surface-container-low p-2.5 rounded-xl border border-outline-variant/20">
+                  <div className="flex items-center justify-between text-xs font-bold text-on-surface">
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-primary text-[16px]">rotate_right</span>
+                      Góc Xoay Mũ
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-surface-container-lowest text-primary font-mono text-[11px] border border-outline-variant/30 font-bold">
+                      {hatTransform.rotation > 0 ? `+${hatTransform.rotation}°` : `${hatTransform.rotation}°`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <button
+                      type="button"
+                      className="px-2.5 py-1 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-xs font-bold border border-outline-variant/30 cursor-pointer active:scale-95 transition-transform"
+                      onClick={() => handleNudgeRotate(-5)}
+                      title="Nghiêng trái 5°"
+                    >
+                      ⟲ -5°
+                    </button>
+                    <input
+                      type="range"
+                      min="-60"
+                      max="60"
+                      step="1"
+                      value={hatTransform.rotation}
+                      onChange={(e) => handleRotateHat(Number(e.target.value))}
+                      className="flex-1 accent-primary cursor-pointer h-2 bg-surface-container-highest rounded-lg"
+                    />
+                    <button
+                      type="button"
+                      className="px-2.5 py-1 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-xs font-bold border border-outline-variant/30 cursor-pointer active:scale-95 transition-transform"
+                      onClick={() => handleNudgeRotate(5)}
+                      title="Nghiêng phải 5°"
+                    >
+                      ⟳ +5°
+                    </button>
+                    <button
+                      type="button"
+                      className="px-2 py-1 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-[11px] font-bold text-on-surface-variant border border-outline-variant/30 cursor-pointer"
+                      onClick={() => handleRotateHat(0)}
+                      title="Thẳng đứng 0°"
+                    >
+                      0°
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Căn Vị Trí X, Y (D-pad & Fine Tune) & Kích Thước (Scale) */}
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Vị trí X, Y */}
+                  <div className="flex flex-col gap-1 bg-surface-container-low p-2.5 rounded-xl border border-outline-variant/20">
+                    <div className="flex items-center justify-between text-xs font-bold text-on-surface">
+                      <span className="flex items-center gap-1">
+                        <span className="material-symbols-outlined text-secondary text-[16px]">open_with</span>
+                        Vị Trí X, Y
+                      </span>
+                      <span className="text-[10px] text-on-surface-variant font-mono font-bold">
+                        {hatTransform.offsetX > 0 ? `+${hatTransform.offsetX}` : hatTransform.offsetX},{hatTransform.offsetY > 0 ? `+${hatTransform.offsetY}` : hatTransform.offsetY}px
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1.5 my-1">
+                      <button
+                        type="button"
+                        className="w-7 h-7 rounded-lg bg-surface-container-lowest border border-outline-variant/30 flex items-center justify-center font-bold text-xs hover:bg-surface-container active:scale-90 cursor-pointer"
+                        onClick={() => handleNudgePosition(-3, 0)}
+                        title="Dịch trái 3px"
+                      >
+                        ◀
+                      </button>
+                      <div className="flex flex-col gap-1">
+                        <button
+                          type="button"
+                          className="w-7 h-7 rounded-lg bg-surface-container-lowest border border-outline-variant/30 flex items-center justify-center font-bold text-xs hover:bg-surface-container active:scale-90 cursor-pointer"
+                          onClick={() => handleNudgePosition(0, -3)}
+                          title="Dịch lên 3px"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          className="w-7 h-7 rounded-lg bg-surface-container-lowest border border-outline-variant/30 flex items-center justify-center font-bold text-xs hover:bg-surface-container active:scale-90 cursor-pointer"
+                          onClick={() => handleNudgePosition(0, 3)}
+                          title="Dịch xuống 3px"
+                        >
+                          ▼
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className="w-7 h-7 rounded-lg bg-surface-container-lowest border border-outline-variant/30 flex items-center justify-center font-bold text-xs hover:bg-surface-container active:scale-90 cursor-pointer"
+                        onClick={() => handleNudgePosition(3, 0)}
+                        title="Dịch phải 3px"
+                      >
+                        ▶
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Kích thước mũ (Scale) */}
+                  <div className="flex flex-col justify-between bg-surface-container-low p-2.5 rounded-xl border border-outline-variant/20">
+                    <div className="flex items-center justify-between text-xs font-bold text-on-surface">
+                      <span className="flex items-center gap-1">
+                        <span className="material-symbols-outlined text-amber-700 text-[16px]">aspect_ratio</span>
+                        Cỡ Mũ
+                      </span>
+                      <span className="text-[10px] text-amber-800 font-mono font-bold">
+                        {Math.round(hatTransform.scale * 100)}%
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <button
+                        type="button"
+                        className="flex-1 py-1 rounded-lg bg-surface-container-lowest border border-outline-variant/30 font-bold text-xs hover:bg-surface-container active:scale-95 cursor-pointer text-center"
+                        onClick={() => handleScaleHat(hatTransform.scale - 0.05)}
+                        title="Thu nhỏ 5%"
+                      >
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-1 rounded-lg bg-surface-container-lowest border border-outline-variant/30 font-bold text-[10px] hover:bg-surface-container cursor-pointer text-center"
+                        onClick={() => handleScaleHat(1.0)}
+                        title="Cỡ chuẩn 100%"
+                      >
+                        100%
+                      </button>
+                      <button
+                        type="button"
+                        className="flex-1 py-1 rounded-lg bg-surface-container-lowest border border-outline-variant/30 font-bold text-xs hover:bg-surface-container active:scale-95 cursor-pointer text-center"
+                        onClick={() => handleScaleHat(hatTransform.scale + 0.05)}
+                        title="Phóng to 5%"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Action Buttons: Gắn Mũ Chắc Chắn & Gắn Chuẩn */}
+                <div className="flex items-center gap-2 pt-1">
+                  {/* Nút Snap Chuẩn */}
+                  <button
+                    type="button"
+                    className="px-3 py-2.5 rounded-xl bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-bold text-xs flex items-center justify-center gap-1 border border-outline-variant/30 active:scale-95 cursor-pointer shrink-0"
+                    onClick={handleSnapHatToHead}
+                    title="Đưa mũ về vị trí cân đối chuẩn trên đầu mèo"
+                  >
+                    <span>🎯</span>
+                    <span>Gắn Chuẩn</span>
+                  </button>
+
+                  {/* NÚT CHÍNH: GẮN MŨ CHẮC CHẮN */}
+                  <button
+                    type="button"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-primary text-on-primary font-bold text-xs flex items-center justify-center gap-1.5 shadow-[0_3px_0_#842415] active:translate-y-0.5 cursor-pointer transition-all"
+                    onClick={handleAttachAndLockHat}
+                    title="Lưu vị trí và gắn chặt mũ vào đầu Boss"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">push_pin</span>
+                    <span>Gắn Mũ Chắc Chắn</span>
+                  </button>
+
+                  {/* Tháo Mũ */}
+                  <button
+                    type="button"
+                    className="px-3 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs flex items-center justify-center gap-1 border border-rose-200 active:scale-95 cursor-pointer shrink-0"
+                    onClick={handleUnequipHat}
+                    title="Tháo mũ cất vào balo"
+                  >
+                    <span>✕</span>
+                    <span>Tháo</span>
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {/* 4. Khay Đổi Mũ Nhanh (Quick Tray) */}
+            {ownedHatsList.length > 0 ? (
+              <div className="flex flex-col gap-1.5 pt-2 border-t border-outline-variant/20">
+                <div className="flex items-center justify-between text-[11px] font-bold text-on-surface-variant">
+                  <span>Chọn mũ để gắn ({ownedHatsList.length} mũ đã có):</span>
+                  {onOpenFashionShop && (
+                    <button
+                      type="button"
+                      className="text-primary hover:underline text-[10px] cursor-pointer"
+                      onClick={onOpenFashionShop}
+                    >
+                      + Sắm thêm mũ
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-1">
+                  {ownedHatsList.map((hat) => {
+                    const isEquipped = curHat?.id === hat.id;
+                    return (
+                      <button
+                        key={hat.id}
+                        type="button"
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer border ${
+                          isEquipped
+                            ? 'bg-primary text-on-primary border-primary shadow-xs'
+                            : 'bg-surface-container-lowest text-on-surface hover:bg-surface-container border-outline-variant/30'
+                        }`}
+                        onClick={() => {
+                          if (onEquipFashionItem) {
+                            onEquipFashionItem(hat);
+                            soundManager.playPop();
+                          }
+                        }}
+                      >
+                        {hat.image ? (
+                          <img src={hat.image} alt={hat.name} className="w-5 h-5 object-contain" />
+                        ) : (
+                          <span>{hat.icon}</span>
+                        )}
+                        <span className="truncate max-w-[90px]">{hat.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between p-2 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900">
+                <span>Bạn chưa sở hữu mũ nào.</span>
+                {onOpenFashionShop && (
+                  <button
+                    type="button"
+                    className="px-2.5 py-1 bg-amber-600 text-white rounded-lg font-bold text-[11px] cursor-pointer"
+                    onClick={onOpenFashionShop}
+                  >
+                    🛍️ Mua Mũ Ngay
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Big Bouncy CTA: Vuốt ve Mèo (Tap to Pet) */}
         <button
           type="button"
-          className="relative z-10 w-full max-w-xs mt-2 bg-primary-container text-on-primary py-3.5 px-6 rounded-full font-headline-sm text-headline-sm shadow-[0_5px_0_#842415] active:translate-y-1 active:shadow-[0_1px_0_#842415] transition-all flex items-center justify-center gap-space-sm cursor-pointer select-none font-bold"
+          className="relative z-10 w-full max-w-xs mt-1.5 sm:mt-2 bg-primary-container text-on-primary py-2.5 sm:py-3.5 px-4 sm:px-6 rounded-full font-headline-sm text-sm sm:text-headline-sm shadow-[0_3px_0_#842415] sm:shadow-[0_5px_0_#842415] active:translate-y-0.5 active:shadow-[0_1px_0_#842415] transition-all flex items-center justify-center gap-1.5 sm:gap-space-sm cursor-pointer select-none font-bold"
           id="pet-button"
           onClick={handlePetButtonClick}
         >
-          <span className="material-symbols-outlined text-[24px]">favorite</span>
-          <span>Vuốt ve {currentSkin.name} (+{actualClickPower} 🪙)</span>
-          <span className="material-symbols-outlined text-[20px] opacity-80">touch_app</span>
+          <span className="material-symbols-outlined text-[20px] sm:text-[24px]">favorite</span>
+          <span className="truncate">Vuốt ve {catName || currentSkin.name} (+{actualClickPower} 🪙)</span>
+          <span className="material-symbols-outlined text-[16px] sm:text-[20px] opacity-80">touch_app</span>
         </button>
       </div>
 
       {/* 3. Cat Vitals & Frenzy Meter */}
-      <div className="w-full bg-surface-container-lowest rounded-lg p-space-md shadow-[0_4px_16px_rgba(122,105,104,0.08)] flex flex-col gap-space-md border border-outline-variant/30">
-        <div className="grid grid-cols-2 gap-space-sm">
+      <div className="w-full bg-surface-container-lowest rounded-lg p-2.5 sm:p-space-md shadow-[0_4px_16px_rgba(122,105,104,0.08)] flex flex-col gap-2 sm:gap-space-md border border-outline-variant/30">
+
+        <div className="grid grid-cols-2 gap-1.5 sm:gap-space-sm">
           {/* Food Indicator */}
           <div
-            className="bg-surface-container-low rounded-lg p-space-sm flex flex-col gap-1.5 cursor-pointer hover:bg-surface-container transition-colors"
+            className="bg-surface-container-low rounded-lg p-2 sm:p-space-sm flex flex-col gap-1 sm:gap-1.5 cursor-pointer hover:bg-surface-container transition-colors"
             onClick={() => setIsFeedModalOpen(true)}
             role="button"
             tabIndex={0}
             title="Chạm để mở túi thức ăn cho mèo"
           >
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <div className="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center">
-                  <span className="material-symbols-outlined text-on-secondary-container text-[16px]">set_meal</span>
+              <div className="flex items-center gap-1 sm:gap-1.5">
+                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-secondary-container flex items-center justify-center">
+                  <span className="material-symbols-outlined text-on-secondary-container text-[14px] sm:text-[16px]">set_meal</span>
                 </div>
-                <span className="font-label-md text-label-md text-on-surface font-bold">Thức ăn</span>
+                <span className="font-label-sm sm:font-label-md text-xs sm:text-label-md text-on-surface font-bold">Thức ăn</span>
               </div>
-              <span className="font-label-md text-label-md text-secondary font-bold">
+              <span className="font-label-sm sm:font-label-md text-xs sm:text-label-md text-secondary font-bold">
                 {Math.round(food)}%
               </span>
             </div>
-            <div className="w-full h-2.5 bg-surface-container-highest rounded-full overflow-hidden p-0.5">
+            <div className="w-full h-2 sm:h-2.5 bg-surface-container-highest rounded-full overflow-hidden p-0.5">
               <div
                 className="h-full bg-secondary rounded-full transition-all duration-300"
                 style={{ width: `${Math.min(100, Math.max(0, food))}%` }}
               />
             </div>
-            <span className="font-label-sm text-label-sm text-on-secondary-container font-semibold">
-              {food >= 60 ? 'No nê (Auto-fish +25%)' : food >= 25 ? 'Bình thường' : 'Đói bụng! (-30% xu)'}
+            <span className="font-label-sm text-[10px] sm:text-label-sm text-on-secondary-container font-semibold truncate">
+              {isSatiated
+                ? `✨ No lâu (${Math.max(1, Math.ceil((_satietyExpiresAt - Date.now()) / 60000))}p) (+25%)`
+                : food >= 60
+                ? 'No nê (+25%)'
+                : food >= 25
+                ? 'Bình thường'
+                : 'Đói bụng! (-30%)'}
             </span>
           </div>
 
           {/* Water Indicator */}
           <div
-            className="bg-surface-container-low rounded-lg p-space-sm flex flex-col gap-1.5 cursor-pointer hover:bg-surface-container transition-colors"
-            onClick={onGiveWater}
+            className="bg-surface-container-low rounded-lg p-2 sm:p-space-sm flex flex-col gap-1 sm:gap-1.5 cursor-pointer hover:bg-surface-container transition-colors"
+            onClick={() => setIsFeedModalOpen(true)}
             role="button"
             tabIndex={0}
-            title="Chạm để cho mèo uống nước sạch (+40%)"
+            title="Chạm để mở túi thức ăn và nước uống cho mèo"
           >
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <div className="w-7 h-7 rounded-full bg-primary-fixed flex items-center justify-center">
-                  <span className="material-symbols-outlined text-primary text-[16px]">water_drop</span>
+              <div className="flex items-center gap-1 sm:gap-1.5">
+                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-primary-fixed flex items-center justify-center">
+                  <span className="material-symbols-outlined text-primary text-[14px] sm:text-[16px]">water_drop</span>
                 </div>
-                <span className="font-label-md text-label-md text-on-surface font-bold">Nước uống</span>
+                <span className="font-label-sm sm:font-label-md text-xs sm:text-label-md text-on-surface font-bold">Nước uống</span>
               </div>
-              <span className="font-label-md text-label-md text-primary font-bold">
+              <span className="font-label-sm sm:font-label-md text-xs sm:text-label-md text-primary font-bold">
                 {Math.round(water)}%
               </span>
             </div>
-            <div className="w-full h-2.5 bg-surface-container-highest rounded-full overflow-hidden p-0.5">
+            <div className="w-full h-2 sm:h-2.5 bg-surface-container-highest rounded-full overflow-hidden p-0.5">
               <div
                 className="h-full bg-primary-container rounded-full transition-all duration-300"
                 style={{ width: `${Math.min(100, Math.max(0, water))}%` }}
               />
             </div>
-            <span className="font-label-sm text-label-sm text-on-surface-variant font-semibold">
-              {water >= 60 ? 'Đầy đủ và tươi mát' : water >= 25 ? 'Bình thường' : 'Khát nước!'}
+            <span className="font-label-sm text-[10px] sm:text-label-sm text-on-surface-variant font-semibold truncate">
+              {isSatiated
+                ? `✨ Đủ nước (${Math.max(1, Math.ceil((_satietyExpiresAt - Date.now()) / 60000))}p) (+25%)`
+                : water >= 60
+                ? 'Tươi mát (+25%)'
+                : water >= 25
+                ? 'Bình thường'
+                : 'Khát nước!'}
             </span>
           </div>
         </div>
 
         {/* Frenzy Combo Bar */}
-        <div className="w-full bg-surface-container-high rounded-lg p-space-sm flex flex-col gap-1.5 border border-outline-variant/30">
+        <div className="w-full bg-surface-container-high rounded-lg p-2 sm:p-space-sm flex flex-col gap-1 sm:gap-1.5 border border-outline-variant/30">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-tertiary text-[20px] animate-pulse">
+            <div className="flex items-center gap-1 sm:gap-1.5">
+              <span className="material-symbols-outlined text-tertiary text-[18px] sm:text-[20px] animate-pulse">
                 local_fire_department
               </span>
-              <span className="font-label-lg text-label-lg text-on-surface font-bold">
-                Combo Frenzy: <strong className="text-tertiary">{comboCount}x Combo</strong>
+              <span className="font-label-sm sm:font-label-lg text-xs sm:text-label-lg text-on-surface font-bold">
+                Combo: <strong className="text-tertiary">{comboCount}x</strong>
               </span>
             </div>
-            <span className="bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse font-bold">
+            <span className="bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-[10px] sm:text-label-sm px-1.5 sm:px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse font-bold">
               x{comboMultiplier.toFixed(1)}
             </span>
           </div>
-          <div className="w-full h-3 bg-surface-container-highest rounded-full overflow-hidden p-0.5 shadow-inner">
+          <div className="w-full h-2.5 sm:h-3 bg-surface-container-highest rounded-full overflow-hidden p-0.5 shadow-inner">
             <div
               className="h-full bg-gradient-to-r from-tertiary-container via-primary-container to-tertiary rounded-full relative transition-all duration-300"
               style={{ width: `${Math.min(100, comboCount * 10)}%` }}
@@ -747,11 +1650,11 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
             </div>
           </div>
           <div className="flex items-center justify-between">
-            <span className="font-label-sm text-label-sm text-tertiary flex items-center gap-1 font-semibold">
-              <span className="material-symbols-outlined text-[14px]">auto_awesome</span>
-              {comboCount >= 10 ? '🔥 FRENZY ĐANG BÙNG NỔ! Nhấp liên tục!' : 'Nhấp liên tục để kích hoạt FRENZY!'}
+            <span className="font-label-sm text-[10px] sm:text-label-sm text-tertiary flex items-center gap-1 font-semibold truncate">
+              <span className="material-symbols-outlined text-[12px] sm:text-[14px]">auto_awesome</span>
+              {comboCount >= 10 ? '🔥 FRENZY BÙNG NỔ! Nhấp!' : 'Nhấp liên tục để FRENZY!'}
             </span>
-            <span className="font-label-sm text-label-sm text-on-surface-variant font-bold">
+            <span className="font-label-sm text-[10px] sm:text-label-sm text-on-surface-variant font-bold shrink-0">
               x{comboMultiplier.toFixed(1)} Sản Lượng
             </span>
           </div>
@@ -776,42 +1679,33 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
         </p>
       </div>
 
-      {/* 5. Quick Action Floating Pill Bar */}
-      <div className="w-full flex items-center justify-between gap-space-xs pt-space-xs">
-        
-
-        {/* Shop Thời Trang & Trang Trí Phòng (Chuyển trang toàn màn hình) */}
+      {/* Nút Balo Nổi Hình Mèo Tách Nền Ở Góc Dưới Cùng Bên Phải */}
+      {onOpenBasket && (
         <button
           type="button"
-          onClick={onOpenFashionShop}
-          className="flex-1 bg-surface-container-lowest text-on-surface p-space-sm rounded-lg flex flex-col items-center justify-center gap-1 shadow-[0_3px_0_#dec0ba] active:translate-y-0.5 active:shadow-[0_1px_0_#dec0ba] transition-all cursor-pointer border border-outline-variant/30 hover:bg-surface-bright"
-          title="Mở Shop Thời Trang (Áo, Mũ & Đồ Trang Trí Phòng)"
+          onClick={() => {
+            soundManager.playPop();
+            onOpenBasket();
+          }}
+          className="floating-backpack-btn animate-backpack-wiggle active:scale-90 hover:scale-105 transition-transform"
+          title="Mở Balo Của Boss (Túi cá, Thời trang, Thức ăn, Cần câu)"
+          aria-label="Mở Balo Của Boss"
         >
-          <div className="w-9 h-9 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center shadow-xs">
-            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-              styler
-            </span>
+          <div className="relative w-full h-full flex items-center justify-center">
+            <img
+              src="/images/icon/ba-lo-hinh-meo.webp"
+              alt="Balo Hình Mèo"
+              className="w-full h-full object-contain select-none pointer-events-none drop-shadow-[0_4px_10px_rgba(0,0,0,0.32)]"
+              draggable={false}
+            />
+            {basketCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[9px] sm:text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-md border-2 border-white leading-tight z-10 animate-pulse">
+                {basketCount}
+              </span>
+            )}
           </div>
-          <span className="font-label-sm text-label-sm text-center leading-tight font-bold">Thời Trang</span>
-          {/* <span className="font-label-sm text-label-sm text-rose-700 font-bold">Áo, Mũ & Phòng</span> */}
         </button>
-
-        {/* Balo Của Boss Shortcut */}
-        <button
-          type="button"
-          onClick={onOpenBasket}
-          className="flex-1 bg-surface-container-lowest text-on-surface p-space-sm rounded-lg flex flex-col items-center justify-center gap-1 shadow-[0_3px_0_#dec0ba] active:translate-y-0.5 active:shadow-[0_1px_0_#dec0ba] transition-all cursor-pointer border border-outline-variant/30 hover:bg-surface-bright"
-          title="Mở Balo Của Boss (Túi cá, Cần câu, Thời trang, Thức ăn)"
-        >
-          <div className="w-9 h-9 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center shadow-xs">
-            <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>backpack</span>
-          </div>
-          <span className="font-label-sm text-label-sm text-center leading-tight font-bold">Balo</span>
-          {/* <span className="font-label-sm text-label-sm text-secondary font-bold">
-            {basketCount > 0 ? `${basketCount} cá • Đồ đạc` : 'Kho đồ đạc'}
-          </span> */}
-        </button>
-      </div>
+      )}
 
       {/* 6. Built-in Feeding Drawer / Modal */}
       {isFeedModalOpen && (
@@ -866,150 +1760,151 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
               </button>
             </div>
 
-            <div className="f-m-food-grid">
-              {FOOD_SHOP_CATALOG.map((item) => {
-                const count = foodInventory[item.id] || 0;
-                const isSelected = selectedFoodId === item.id;
-                const isOutOfStock = count <= 0;
-
-                return (
-                  <div
-                    key={item.id}
-                    className={`f-m-food-item ${isSelected ? 'item-selected' : ''} ${
-                      isOutOfStock ? 'item-out-of-stock' : ''
-                    }`}
-                    onClick={() => {
-                      if (!isOutOfStock) {
-                        soundManager.playPop();
-                        setSelectedFoodId(item.id);
-                        setFeedQuantity(1);
-                      }
-                    }}
-                  >
-                    {item.image ? (
-                      <img src={item.image} alt={item.name} className="w-8 h-8 object-contain shrink-0" />
-                    ) : (
-                      <span className="f-m-item-icon">{item.icon}</span>
-                    )}
-                    <div className="f-m-item-info">
-                      <strong className="f-m-item-name">{item.name}</strong>
-                      <span className="f-m-item-qty">
-                        {isOutOfStock ? 'Hết hàng (x0)' : `Còn: x${count}`}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Selected item feeding control */}
             {(() => {
-              const selectedItem =
-                FOOD_SHOP_CATALOG.find((f) => f.id === selectedFoodId) || FOOD_SHOP_CATALOG[0];
-              const available = foodInventory[selectedItem.id] || 0;
+              const ownedFoodItems = FOOD_SHOP_CATALOG.filter(
+                (item) => (foodInventory[item.id] || 0) > 0
+              );
 
-              if (available <= 0) {
+              if (ownedFoodItems.length === 0) {
                 return (
-                  <div className="f-m-empty-selection">
-                    <p>Món này hiện đã hết trong túi!</p>
+                  <div className="f-m-empty-selection py-6">
+                    <span className="text-3xl mb-1">🧺</span>
+                    <p className="font-bold text-amber-900">Túi thức ăn của bạn đang trống!</p>
+                    <p className="text-xs text-amber-700">Hãy ghé Cửa Hàng Thức Ăn để mua thêm đồ ăn bồi dưỡng cho mèo cưng nhé.</p>
                     <button
                       type="button"
-                      className="f-m-buy-now-btn"
+                      className="f-m-buy-now-btn mt-2"
                       onClick={() => {
                         setIsFeedModalOpen(false);
                         onOpenFoodShop();
                       }}
                     >
-                      🛒 Vào Shop Mua Thêm {selectedItem.name}
+                      🛒 Đến Cửa Hàng Thức Ăn
                     </button>
                   </div>
                 );
               }
 
+              const selectedItem =
+                ownedFoodItems.find((f) => f.id === selectedFoodId) || ownedFoodItems[0];
+              const available = foodInventory[selectedItem.id] || 0;
+              const currentFeedQty = Math.max(1, Math.min(feedQuantity, available));
               const richnessBonus = 1 + Math.min(1.5, selectedItem.price / 3000);
-              const foodGain = selectedItem.foodRestore * feedQuantity;
-              const waterGain = selectedItem.waterRestore * feedQuantity;
-              const xpGain = Math.round(selectedItem.xpReward * feedQuantity * richnessBonus);
+              const foodGain = selectedItem.foodRestore * currentFeedQty;
+              const waterGain = selectedItem.waterRestore * currentFeedQty;
+              const xpGain = Math.round(selectedItem.xpReward * currentFeedQty * richnessBonus);
 
               return (
-                <div className="f-m-selected-details-box">
-                  <div className="flex items-center gap-3 p-2 bg-amber-50/70 rounded-xl border border-amber-100 mb-1">
-                    {selectedItem.image ? (
-                      <img src={selectedItem.image} alt={selectedItem.name} className="w-10 h-10 object-contain shrink-0 drop-shadow-xs" />
-                    ) : (
-                      <span className="text-2xl">{selectedItem.icon}</span>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <strong className="text-sm font-bold text-gray-800 block truncate">{selectedItem.name}</strong>
-                      <span className="text-xs text-amber-800 line-clamp-1">{selectedItem.description}</span>
-                    </div>
+                <>
+                  <div className="f-m-food-grid">
+                    {ownedFoodItems.map((item) => {
+                      const count = foodInventory[item.id] || 0;
+                      const isSelected = selectedItem.id === item.id;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className={`f-m-food-item ${isSelected ? 'item-selected' : ''}`}
+                          onClick={() => {
+                            soundManager.playPop();
+                            setSelectedFoodId(item.id);
+                            setFeedQuantity(1);
+                          }}
+                        >
+                          {item.image ? (
+                            <img src={item.image} alt={item.name} className="w-9 h-9 object-contain shrink-0" />
+                          ) : (
+                            <span className="f-m-item-icon shrink-0">{item.icon}</span>
+                          )}
+                          <div className="f-m-item-info">
+                            <strong className="f-m-item-name">{item.name}</strong>
+                            <span className="f-m-item-qty">Còn: x{count}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="f-m-stepper-control">
-                    <span className="f-m-stepper-label">Số lượng cho ăn:</span>
-                    <div className="f-m-stepper-btns">
+
+                  {/* Selected item feeding control */}
+                  <div className="f-m-selected-details-box">
+                    <div className="flex items-center gap-3 p-2 bg-amber-50/70 rounded-xl border border-amber-100 mb-1">
+                      {selectedItem.image ? (
+                        <img src={selectedItem.image} alt={selectedItem.name} className="w-10 h-10 object-contain shrink-0 drop-shadow-xs" />
+                      ) : (
+                        <span className="text-2xl">{selectedItem.icon}</span>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <strong className="text-sm font-bold text-gray-800 block truncate">{selectedItem.name}</strong>
+                        <span className="text-xs text-amber-800 line-clamp-1">{selectedItem.description}</span>
+                      </div>
+                    </div>
+                    <div className="f-m-stepper-control">
+                      <span className="f-m-stepper-label">Số lượng cho ăn:</span>
+                      <div className="f-m-stepper-btns">
+                        <button
+                          type="button"
+                          className="f-m-step-btn"
+                          disabled={currentFeedQty <= 1}
+                          onClick={() => setFeedQuantity((q) => Math.max(1, q - 1))}
+                        >
+                          -
+                        </button>
+                        <strong className="f-m-step-num">{currentFeedQty}</strong>
+                        <button
+                          type="button"
+                          className="f-m-step-btn"
+                          disabled={currentFeedQty >= available}
+                          onClick={() => setFeedQuantity((q) => Math.min(available, q + 1))}
+                        >
+                          +
+                        </button>
+                      </div>
+
                       <button
                         type="button"
-                        className="f-m-step-btn"
-                        disabled={feedQuantity <= 1}
-                        onClick={() => setFeedQuantity((q) => Math.max(1, q - 1))}
+                        className="f-m-all-btn"
+                        onClick={() => setFeedQuantity(available)}
                       >
-                        -
+                        Ăn hết (x{available})
                       </button>
-                      <strong className="f-m-step-num">{feedQuantity}</strong>
-                      <button
-                        type="button"
-                        className="f-m-step-btn"
-                        disabled={feedQuantity >= available}
-                        onClick={() => setFeedQuantity((q) => Math.min(available, q + 1))}
-                      >
-                        +
-                      </button>
+                    </div>
+
+                    {/* Restoration calculation breakdown */}
+                    <div className="f-m-gain-row">
+                      {selectedItem.foodRestore > 0 && (
+                        <span className="f-m-gain-pill food-gain">
+                          +{foodGain}% No ({Math.round(food)}% ➔ {Math.min(100, Math.round(food + foodGain))}%)
+                        </span>
+                      )}
+                      {selectedItem.waterRestore > 0 && (
+                        <span className="f-m-gain-pill water-gain">
+                          +{waterGain}% Nước ({Math.round(water)}% ➔ {Math.min(100, Math.round(water + waterGain))}%)
+                        </span>
+                      )}
+                      <span className="f-m-gain-pill xp-gain">
+                        +{formatNumber(xpGain)} XP ⭐
+                      </span>
                     </div>
 
                     <button
                       type="button"
-                      className="f-m-all-btn"
-                      onClick={() => setFeedQuantity(available)}
+                      className="f-m-submit-feed-btn"
+                      onClick={() => {
+                        if (!onFeedFromInventory) return;
+                        const res = onFeedFromInventory(selectedItem, currentFeedQty);
+                        if (res.success) {
+                          setFeedToast(
+                            `😋 Mèo đã ăn ${currentFeedQty}x ${selectedItem.name}! (+${res.restoredFood}% no, +${formatNumber(res.gainedXp)} XP ⭐)`
+                          );
+                          setFeedQuantity(1);
+                          setTimeout(() => setFeedToast(null), 3000);
+                        }
+                      }}
                     >
-                      Ăn hết (x{available})
+                      🍽️ Cho Mèo Ăn {currentFeedQty}x {selectedItem.name}
                     </button>
                   </div>
-
-                  {/* Restoration calculation breakdown */}
-                  <div className="f-m-gain-row">
-                    {selectedItem.foodRestore > 0 && (
-                      <span className="f-m-gain-pill food-gain">
-                        +{foodGain}% No ({Math.round(food)}% ➔ {Math.min(100, Math.round(food + foodGain))}%)
-                      </span>
-                    )}
-                    {selectedItem.waterRestore > 0 && (
-                      <span className="f-m-gain-pill water-gain">
-                        +{waterGain}% Nước ({Math.round(water)}% ➔ {Math.min(100, Math.round(water + waterGain))}%)
-                      </span>
-                    )}
-                    <span className="f-m-gain-pill xp-gain">
-                      +{formatNumber(xpGain)} XP ⭐
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="f-m-submit-feed-btn"
-                    onClick={() => {
-                      if (!onFeedFromInventory) return;
-                      const res = onFeedFromInventory(selectedItem, feedQuantity);
-                      if (res.success) {
-                        setFeedToast(
-                          `😋 Mèo đã ăn ${feedQuantity}x ${selectedItem.name}! (+${res.restoredFood}% no, +${formatNumber(res.gainedXp)} XP)`
-                        );
-                        setFeedQuantity(1);
-                        setTimeout(() => setFeedToast(null), 3000);
-                      }
-                    }}
-                  >
-                    🍽️ Cho Mèo Ăn {feedQuantity}x {selectedItem.name}
-                  </button>
-                </div>
+                </>
               );
             })()}
           </div>
@@ -1017,4 +1912,4 @@ export const CatCharacter: React.FC<CatCharacterProps> = ({
       )}
     </div>
   );
-};
+});

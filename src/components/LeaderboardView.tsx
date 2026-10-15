@@ -1,14 +1,17 @@
-import React, { useState, useMemo } from 'react';
-import type { RankTier } from '../data/rankTiers';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { type RankTier, RANK_TIERS, getRankTierByLevel } from '../data/rankTiers';
 import type { CatSkin } from '../data/skins';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
+import { leaderboardService } from '../services/leaderboardService';
+import { authService, type UserProfileInfo } from '../services/authService';
 
 export interface LeaderboardViewProps {
   myLevel: number;
   myXp: number;
   myRankTier: RankTier;
   myDisplayName?: string;
+  myAvatar?: string;
   myBiggestFishKg?: number;
   myCoins?: number;
   currentSkin?: CatSkin;
@@ -19,774 +22,851 @@ export interface LeaderboardViewProps {
   onImportSave?: (code: string) => boolean;
   onSyncCloudNow?: () => Promise<void>;
   onBackToCat?: () => void;
+  currentUser?: UserProfileInfo | null;
+  onOpenAuth?: () => void;
 }
 
-type FilterTab = 'week' | 'all' | 'record';
+export type RankCriterion = 'coins' | 'level' | 'xp';
 
-interface PodiumPlayer {
-  rank: 1 | 2 | 3;
+interface LeaderboardPlayer {
+  id: string;
   name: string;
   level: number;
+  xp: number;
+  coins: number;
   avatar: string;
-  skinTitle?: string;
-  recordFish?: string;
-  scoreDisplay: string;
-  fishCount: number;
+  biggestFishKg: number;
+  isMe?: boolean;
 }
-
-interface RankedPlayer {
-  rank: number;
-  name: string;
-  level: number;
-  avatar: string;
-  recordText: string;
-  fishCount: number;
-}
-
-// Chibi avatar links from template
-const AVATARS = {
-  first:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuBvDknMYsVS0gPMaOvp5fVCsL7TZ5vDd1_RrMOAF1gsgg8HVu1wJv31iwdgG-Ija8lJ4fNYQuf8w9d69u0Qt6obw12v3M38YeIBB2wY1aVBBVyfK-PkMjY9WXffMJWZHAk1C0gVxfnoDg9SxuPGqBRloH4sllMYAcYsZEv22SHtDse6yvduwmcPh0qdJet5pFzocPW1z2Jr43pcx8E0OFLjb0GnYB6-QMtcYa03axRa2TQhdt_DGH8nIg',
-  second:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuBmP3ppPhQ-OtTnxibrF5ulZhAX3woNjJXqWbAUFDTYaibJMWS3nTg0sIU8yZE1_c6hOo4mIGwFEGVyOuzHT_CTvTmN6N1C6n7aaRaLxRLwhSZK39t5wXlee5mYDHS61Ls_jzBQRu9P3tOkvR4rB0hELYy0PwpRhlAjsxqXEp92WqgEQTRj30DD2zQqpz6fGJJXwYAsYMailYQrYBH7CQurF8Z2fXa07MWJGprh6CEXYvrZ8aw0PdGUQQ',
-  third:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuBQMgM_dJcKbRqVw7oTumJKtQtKs8eXvk37cr_4mCU-gIpiq9uzfd5Rydb92_1KaA3biKxr3W2gNBvn8FNA_CZudNHky9hBffOk1aNOamvc9uv2HLJc-gxOQkdQ1OyfXqYGBKIygqrgUzkAwtexYruH_p5-KS46RySUUeSxkbn5klYWpSdmGnz7dFAIBel3Kuc9tc8YoNDHx-eiTwGWCa5JXpfUOVquuxYBbH058-n34EDJaAv_VDazPQ',
-  rank4:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuCT2cGM2R4qGUgUho0KLaie6FgKqPpDl_2fNAia409WQWSFpqk7BQ5bYIKaNSyYLoKCIY2IYDNosJdwO8KQhUhKf_awTlivzzQtNTxxnv-OD1XpvPdeWZl1FxS2YdusmlMN6_0_PP_j14tmnE5P8297ZxZ8MXKbUEIEpsLoLUALxmgBOJF6FrURWew5unJW6BZvegFAFsHjnTJAEuP79_R2IVGiNCTR47NnY8w8BUn7oggBsG_WKNC1gw',
-  rank5:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuD-OK0tMPXcZPnwEVjsOT9cF66X_5bqTQRArHjMoKDKaa422o8Rp8BuRK85lb32L2MaJYUgbsvH8_W8A8DOFxmLinn7C7OuinExr7HYPoX7fR1mB8MhEIm8tQj__ciRfOweMdYKILAg6y9wAC-JYCqZqLCF6VCm6ELT94NBfZIlVDmYynxBPRNaJNoDyNMOwTwzbMKeUyQP-c1nukOGANGhp578y9Ww4mBkA43JcJleWxSqgeOj3IN8_g',
-  rank6:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuAQPIVX_yZvn4mAVjQdrg03KcI6ZV1nNA0T1LjKC1he4C_11G_XCBFLODHJdfiA3vrevD5cUJaMfnmVT8S2gGHW7gH9Tl1nPd52jYd_n-IHIfaX6a6xT2bogC5BZYuMJTbBWtPm8dq1Xum0pkTLFkLj4JlRRBLCkq5Jl3Pu6Xb4zP9mfrQYZdBtR_E4j0jFay4F_3LXLq58gEEKniAwMgkL55jSWZMK9WqC4dekUbHaFU5MQMFgXOGaAQ',
-  rank7:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuDf2E6ldbO4SOlmCo6ycplyzndwuSEbkjFu9w-OVdSqqlYBA0rWl1ICmQc3_MxY3DIsggAxNZk05unPl3cm1GnPOTSlxmvoPgMFPsbb7eCpNr5QF_D4Ae9uv5Q2mDuZkhe9UBU_gxOllN-vuVEcLGFwod6GpLn5ryRyfDtdFQWYKAW-r8N2bylWyPDvjsIdaK6bFYN-p2SP_yMUxJJ9zLTgvWnthb2U9qoljCzVdOgA_vXU7YYuIGTsOA',
-  rank8:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuBG1olXpVxzNXxUhqimAar6tw5XFkG9l_Uobpv4M_scISTs6I6XFpQ2_3SH-hiIJHtBA7ZZRtqldFEYJi2DZcWJqJ4VneU6BEtmNrRFI6vpy3Z2T6R1WpFjCo4ls4pJe9Uk0Tj2_Xm5QaaK4voQNw-tRXhPgiKw5mCgYqWeCwEgWVYh9D7-sBXYw1vWbkSmrDrXIGOpyZH2VyeQLEA0anNONSICRQxjZrYqPJAsJm_WSUPvrkm9p9htYA',
-  player:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuDnIUH5f2ufen8MJIqXzH_MpCUmQd9KO7_mKe6IgG1XDlfKD71lXtLxo4SCAPUy-XqN96doTMXcU_0uBfLb2LbzmazLx4YB2e-W22FK9W3Fh5Zy2C9dLy3WIfDoG1FKa2cCnmkHPz2dt176ONSgclT_YPhcBiWZu0Oaq-PlMQ-eH0imv-YjwF_5d5k-O5TauiRJueW3nRIzTO8-9U2W3c3dUAEiP5L1Bi0Iu9xGsOA_LzYiQ5HxwEqJRQ',
-  trophy:
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuC7ODlT-kecUwJ4HpIE50zfZUZ2O0C_j9Nl5r_gqfjqrgxh8DT0QQ-9BKPNxGKY8nYy4M_WGbbQ8-bzSjMg61zUFbKGqTw80X6_pxJlj7PzS2VN9_VDnczEIzvB00XFQWsqYTNTCFuXwDqSJ65tbQJ8xU0QQD-f820PRwGzlYR13U_zme2cxReqLhnhfXPtwJIM5vIdvvcUCB5KL-aGLvQZHMxc3nRoq4tjyyVAlAe1asFlLUv5uNKMeg',
-};
 
 export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
   myLevel,
   myXp,
   myRankTier,
   myDisplayName = 'Bạn (Ngư Thủ Cá Bự)',
-  myBiggestFishKg = 12.5,
+  myAvatar,
+  myCoins = 0,
+  myBiggestFishKg = 0,
   currentSkin,
-  totalFishCaught = 148250,
-  saveStatus = 'Đã đồng bộ an toàn',
-  onSaveNow,
+  saveStatus: _saveStatus = 'Đã đồng bộ an toàn',
+  onSaveNow: _onSaveNow,
   onSyncCloudNow,
+  onBackToCat,
+  currentUser,
+  onOpenAuth,
 }) => {
-  const [filterTab, setFilterTab] = useState<FilterTab>('week');
+  const [criterion, setCriterion] = useState<RankCriterion>('coins');
+  const [players, setPlayers] = useState<LeaderboardPlayer[]>([]);
+  const [isFetchingCloud, setIsFetchingCloud] = useState<boolean>(false);
+  const [showTiersModal, setShowTiersModal] = useState<boolean>(false);
   const [showToast, setShowToast] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState({
     title: 'Đồng Bộ Thành Công!',
-    subtitle: `${formatNumber(totalFishCaught)} cá & tiến trình Rank #42 đã sao lưu đám mây.`,
+    subtitle: 'Dữ liệu đã được cập nhật từ máy chủ.',
   });
 
-  // Sync Status display
-  const syncTimeText = useMemo(() => {
-    if (saveStatus && saveStatus.includes('Đã lưu')) return saveStatus;
-    return 'Đã đồng bộ an toàn';
-  }, [saveStatus]);
+  const myActualAvatar = myAvatar || currentUser?.photoURL || currentSkin?.image || '/images/cat_avatars_webp/avatar_01.webp';
+  const myActualName = myDisplayName || currentUser?.catName || currentUser?.displayName || 'Bạn (Ngư Thủ Cá Bự)';
 
-  // Rank position (Hypothetical rank)
-  const myPosition = useMemo(() => {
-    if (myXp > 50000) return 3;
-    if (myXp > 25000) return 8;
-    if (myXp > 10000) return 19;
-    return 42;
-  }, [myXp]);
+  // Tải danh sách người chơi THẬT từ Firestore & LocalStorage (không dùng dữ liệu ảo)
+  const fetchCloudLeaderboard = useCallback(async () => {
+    setIsFetchingCloud(true);
+    try {
+      // 1. Tự động đồng bộ điểm số mới nhất của người chơi lên Firestore
+      if (onSyncCloudNow && currentUser && !currentUser.isAnonymous) {
+        try {
+          await onSyncCloudNow();
+        } catch {
+          // Bỏ qua nếu lỗi mạng
+        }
+      }
 
-  // Tab change
-  const handleTabClick = (tab: FilterTab) => {
+      // 2. Lấy danh sách thật từ Firestore /leaderboards
+      const entries = await leaderboardService.getTopLeaderboard(100);
+
+      // 3. Lấy thêm các tài khoản cục bộ trên máy nếu có
+      const localUsers = authService.getAllLocalUsers();
+
+      // Bản đồ gom người chơi theo id / username để tránh trùng lặp
+      const playerMap = new Map<string, LeaderboardPlayer>();
+
+      // Đưa danh sách người chơi thật từ Firestore vào
+      for (const e of entries) {
+        const id = e.uid || e.username || e.displayName;
+        if (!id) continue;
+        playerMap.set(id, {
+          id: e.uid,
+          name: e.displayName || e.catName || e.username || 'Ngư Thủ Boss Mèo',
+          level: Math.max(1, Number(e.level) || 1),
+          xp: Math.max(0, Number(e.xp) || 0),
+          coins: Math.max(0, Number(e.coins) || 0),
+          avatar: e.photoURL || '/images/cat_avatars_webp/avatar_01.webp',
+          biggestFishKg: Number(e.biggestFishKg) || 0,
+          isMe: false,
+        });
+      }
+
+      // Đưa các tài khoản cục bộ đã đăng ký trên máy vào nếu chưa có
+      for (const u of localUsers) {
+        if (!playerMap.has(u.uid) && !playerMap.has(u.username)) {
+          playerMap.set(u.uid, {
+            id: u.uid,
+            name: u.catName || u.displayName || u.username,
+            level: 1,
+            xp: 0,
+            coins: 0,
+            avatar: u.photoURL || '/images/cat_avatars_webp/avatar_01.webp',
+            biggestFishKg: 0,
+            isMe: false,
+          });
+        }
+      }
+
+      // 4. Luôn đảm bảo tài khoản người chơi HIỆN TẠI có mặt với số liệu thời gian thực mới nhất
+      const myId = currentUser?.uid || 'my_self';
+
+      // Xoá entry cũ trùng lặp nếu có để ghi đè số liệu chính xác nhất
+      playerMap.delete(myId);
+      if (currentUser?.username) {
+        playerMap.delete(currentUser.username);
+      }
+
+      playerMap.set(myId, {
+        id: myId,
+        name: myActualName,
+        level: myLevel,
+        xp: myXp,
+        coins: myCoins,
+        avatar: myActualAvatar,
+        biggestFishKg: myBiggestFishKg,
+        isMe: true,
+      });
+
+      setPlayers(Array.from(playerMap.values()));
+    } catch (err) {
+      console.warn('Lỗi tải bảng xếp hạng thật:', err);
+    } finally {
+      setIsFetchingCloud(false);
+    }
+  }, [onSyncCloudNow, currentUser, myActualName, myActualAvatar, myLevel, myXp, myCoins, myBiggestFishKg]);
+
+  useEffect(() => {
+    fetchCloudLeaderboard();
+  }, [fetchCloudLeaderboard]);
+
+  // Sắp xếp danh sách người chơi dựa trên tiêu chí được chọn (coins, level, xp)
+  const sortedPlayers = useMemo(() => {
+    const list = [...players];
+    if (criterion === 'coins') {
+      return list.sort((a, b) => b.coins - a.coins);
+    }
+    if (criterion === 'level') {
+      return list.sort((a, b) => (b.level !== a.level ? b.level - a.level : b.xp - a.xp));
+    }
+    // xp
+    return list.sort((a, b) => b.xp - a.xp);
+  }, [criterion, players]);
+
+  // Vị trí thứ hạng chính xác của người chơi hiện tại trong danh sách thật
+  const myIndex = useMemo(() => {
+    return sortedPlayers.findIndex((p) => p.isMe || p.id === (currentUser?.uid || 'my_self'));
+  }, [sortedPlayers, currentUser]);
+
+  const myPosition = myIndex >= 0 ? myIndex + 1 : 1;
+  const totalPlayers = sortedPlayers.length;
+
+  const handleCriterionClick = (crit: RankCriterion) => {
     soundManager.playPop();
-    setFilterTab(tab);
+    setCriterion(crit);
   };
 
-  // Refresh
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     soundManager.playPop();
+    await fetchCloudLeaderboard();
     setToastMessage({
       title: 'Bảng Xếp Hạng Đã Cập Nhật!',
-      subtitle: 'Dữ liệu ngư thủ toàn cầu đã được đồng bộ mới nhất.',
+      subtitle: `Dữ liệu người chơi thật theo ${criterion === 'coins' ? 'Số Xu 🪙' : criterion === 'level' ? 'Level ⭐' : 'Điểm XP ✨'} đã được làm mới.`,
     });
     setShowToast(true);
     setTimeout(() => setShowToast(false), 2400);
   };
 
-  // Cloud Save Now action
-  const handleSaveNow = async () => {
-    soundManager.playPop();
-    if (onSaveNow) onSaveNow();
-    if (onSyncCloudNow) {
-      try {
-        await onSyncCloudNow();
-      } catch {
-        // Handled internally
-      }
+  // Top 3 Podium
+  const top1 = sortedPlayers[0];
+  const top2 = sortedPlayers[1];
+  const top3 = sortedPlayers[2];
+
+  // Hạng 4 trở đi
+  const remainingPlayers = sortedPlayers.slice(3);
+
+  // Helper hiển thị chỉ số chính theo criterion
+  const renderScoreDisplay = (player: { coins: number; level: number; xp: number }) => {
+    if (criterion === 'coins') {
+      return {
+        value: `${formatNumber(player.coins)}`,
+        unit: '🪙 Xu',
+      };
     }
-    soundManager.playUpgrade();
-    setToastMessage({
-      title: 'Đồng Bộ Thành Công!',
-      subtitle: `${formatNumber(totalFishCaught)} cá & tiến trình Rank #${myPosition} đã sao lưu đám mây.`,
-    });
-    setShowToast(true);
-    setTimeout(() => {
-      setShowToast(false);
-    }, 3200);
+    if (criterion === 'level') {
+      return {
+        value: `Lv.${player.level}`,
+        unit: '⭐ Cấp',
+      };
+    }
+    return {
+      value: `${formatNumber(player.xp)}`,
+      unit: '✨ XP',
+    };
   };
 
-  // Podium Data based on active tab
-  const podiumData: { first: PodiumPlayer; second: PodiumPlayer; third: PodiumPlayer } = useMemo(() => {
-    if (filterTab === 'all') {
-      return {
-        first: {
-          rank: 1,
-          name: 'Mèo Hoàng Gia',
-          level: 105,
-          avatar: AVATARS.first,
-          skinTitle: 'Huyền Thoại (Legend)',
-          recordFish: 'Cá Voi Sát Thủ 58.4kg',
-          scoreDisplay: '15.4M',
-          fishCount: 15450000,
-        },
-        second: {
-          rank: 2,
-          name: 'Boss Mèo Tuxedo',
-          level: 88,
-          avatar: AVATARS.second,
-          skinTitle: 'Kim Cương (Diamond)',
-          scoreDisplay: '9,890K',
-          fishCount: 9890000,
-        },
-        third: {
-          rank: 3,
-          name: 'MiuMiuQueen',
-          level: 74,
-          avatar: AVATARS.third,
-          skinTitle: 'Quý Tộc Thần Thánh',
-          scoreDisplay: '7,200K',
-          fishCount: 7200000,
-        },
-      };
-    }
-
-    if (filterTab === 'record') {
-      return {
-        first: {
-          rank: 1,
-          name: 'Mèo Hoàng Gia',
-          level: 105,
-          avatar: AVATARS.first,
-          skinTitle: 'Thợ Câu Vĩ Đại',
-          recordFish: 'Cá Voi Kỷ Lục 58.4kg',
-          scoreDisplay: '58.4 kg',
-          fishCount: 15450000,
-        },
-        second: {
-          rank: 2,
-          name: 'Boss Mèo Tuxedo',
-          level: 88,
-          avatar: AVATARS.second,
-          skinTitle: 'Chiến Tướng Biển Sâu',
-          scoreDisplay: '49.2 kg',
-          fishCount: 9890000,
-        },
-        third: {
-          rank: 3,
-          name: 'MiuMiuQueen',
-          level: 45,
-          avatar: AVATARS.third,
-          skinTitle: 'Nữ Hoàng Biển Cả',
-          scoreDisplay: '48.2 kg',
-          fishCount: 2450000,
-        },
-      };
-    }
-
-    // Default: 'week'
-    return {
-      first: {
-        rank: 1,
-        name: 'MiuMiuQueen',
-        level: 45,
-        avatar: AVATARS.first,
-        skinTitle: 'Mèo Tuxedo Quý Tộc',
-        recordFish: 'Cá Vua 48.2kg',
-        scoreDisplay: '2,450K',
-        fishCount: 2450000,
-      },
-      second: {
-        rank: 2,
-        name: 'CatWhisperer',
-        level: 31,
-        avatar: AVATARS.second,
-        skinTitle: 'Thợ Câu Rừng Sâu',
-        scoreDisplay: '1,890,000',
-        fishCount: 1890000,
-      },
-      third: {
-        rank: 3,
-        name: 'HoàngThượngBéo',
-        level: 28,
-        avatar: AVATARS.third,
-        skinTitle: 'Đầu Bếp Sushi',
-        scoreDisplay: '1,420,000',
-        fishCount: 1420000,
-      },
-    };
-  }, [filterTab]);
-
-  // Ranked List (4th - 10th) based on active tab
-  const rankedPlayers: RankedPlayer[] = useMemo(() => {
-    if (filterTab === 'all') {
-      return [
-        {
-          rank: 4,
-          name: 'Thợ Câu Đại Dương',
-          level: 68,
-          avatar: AVATARS.rank4,
-          recordText: 'Cá Mập Trắng: 36.5kg',
-          fishCount: 5430000,
-        },
-        {
-          rank: 5,
-          name: 'CatWhisperer',
-          level: 58,
-          avatar: AVATARS.rank5,
-          recordText: 'Cá Ngừ Đại Dương: 32.5kg',
-          fishCount: 4120000,
-        },
-        {
-          rank: 6,
-          name: 'HoàngThượngBéo',
-          level: 52,
-          avatar: AVATARS.rank6,
-          recordText: 'Cá Trê Bự: 28.1kg',
-          fishCount: 3450000,
-        },
-        {
-          rank: 7,
-          name: 'Mèo Mướp Tinh Nhuệ',
-          level: 46,
-          avatar: AVATARS.rank7,
-          recordText: 'Cá Chép Hồng: 25.4kg',
-          fishCount: 2890000,
-        },
-        {
-          rank: 8,
-          name: 'ThíchĂnCáNướng',
-          level: 41,
-          avatar: AVATARS.rank8,
-          recordText: 'Cá Vàng Kỷ Lục: 22.8kg',
-          fishCount: 2120000,
-        },
-      ];
-    }
-
-    if (filterTab === 'record') {
-      return [
-        {
-          rank: 4,
-          name: 'Thợ Câu Đại Dương',
-          level: 68,
-          avatar: AVATARS.rank4,
-          recordText: 'Cá Mập Trắng: 36.5kg',
-          fishCount: 5430000,
-        },
-        {
-          rank: 5,
-          name: 'CatWhisperer',
-          level: 31,
-          avatar: AVATARS.rank5,
-          recordText: 'Cá Hề Khổng Lồ: 32.5kg',
-          fishCount: 1890000,
-        },
-        {
-          rank: 6,
-          name: 'HoàngThượngBéo',
-          level: 28,
-          avatar: AVATARS.rank6,
-          recordText: 'Cá Trê Bự: 28.1kg',
-          fishCount: 1420000,
-        },
-        {
-          rank: 7,
-          name: 'Mèo Mướp Tinh Nhuệ',
-          level: 42,
-          avatar: AVATARS.rank7,
-          recordText: 'Cá Chép Hồng: 25.4kg',
-          fishCount: 1850000,
-        },
-        {
-          rank: 8,
-          name: 'ThíchĂnCáNướng',
-          level: 25,
-          avatar: AVATARS.rank8,
-          recordText: 'Cá Vàng Kỷ Lục: 22.8kg',
-          fishCount: 1120400,
-        },
-      ];
-    }
-
-    // Default 'week'
-    return [
-      {
-        rank: 4,
-        name: 'ThíchĂnCáNướng',
-        level: 25,
-        avatar: AVATARS.rank4,
-        recordText: 'Cá Vàng Kỷ Lục: 22.8kg',
-        fishCount: 1120400,
-      },
-      {
-        rank: 5,
-        name: 'HắcMiuSátThủ',
-        level: 24,
-        avatar: AVATARS.rank5,
-        recordText: 'Cá Vàng Kỷ Lục: 19.5kg',
-        fishCount: 985600,
-      },
-      {
-        rank: 6,
-        name: 'CôngChúaBông',
-        level: 22,
-        avatar: AVATARS.rank6,
-        recordText: 'Cá Vàng Kỷ Lục: 18.2kg',
-        fishCount: 840120,
-      },
-      {
-        rank: 7,
-        name: 'MèoDâuTây',
-        level: 20,
-        avatar: AVATARS.rank7,
-        recordText: 'Cá Vàng Kỷ Lục: 16.9kg',
-        fishCount: 762000,
-      },
-      {
-        rank: 8,
-        name: 'BéNgáiNgủ',
-        level: 19,
-        avatar: AVATARS.rank8,
-        recordText: 'Cá Vàng Kỷ Lục: 15.0kg',
-        fishCount: 690450,
-      },
-    ];
-  }, [filterTab]);
+  const allTiersList = Object.values(RANK_TIERS);
 
   return (
-    <div className="flex flex-col w-full max-w-xl mx-auto px-margin pb-8 gap-space-lg select-none">
-      {/* 2. PLAYER PERSONAL RANK CARD */}
-      <section className="bg-gradient-to-br from-primary-fixed to-surface-container rounded-lg p-space-md shadow-[0_6px_16px_rgba(165,59,41,0.12)] relative overflow-hidden border border-primary-fixed-dim/40">
-        {/* Floating Ribbon Badge */}
-        <div className="flex items-center justify-between pb-space-xs">
-          <div className="flex items-center gap-1.5 bg-surface-container-lowest/80 backdrop-blur-md px-2.5 py-1 rounded-full shadow-[0_2px_6px_rgba(122,105,104,0.08)]">
-            <span className="material-symbols-outlined text-tertiary text-[18px]">
-              workspace_premium
-            </span>
-            <span className="font-label-lg text-label-lg text-on-surface font-bold">
-              {myRankTier?.name || 'Hạng Vàng II'}
-            </span>
-            <span className="font-body-sm text-body-sm text-tertiary font-bold">
-              ({myRankTier?.badge || 'Gold Paws'})
-            </span>
-          </div>
-          <div className="bg-primary text-on-primary font-label-md text-label-md px-3 py-1 rounded-full shadow-[0_2px_4px_rgba(165,59,41,0.25)] flex items-center gap-1">
-            <span>Vị trí:</span>
-            <span className="font-headline-sm text-headline-sm tracking-tight font-bold">
-              #{myPosition}
-            </span>
-            <span className="font-label-sm text-label-sm opacity-90">/ 12.5k</span>
+    <div className="flex flex-col w-full max-w-xl mx-auto px-2 sm:px-margin pt-1 sm:pt-2 pb-20 sm:pb-24 gap-space-md select-none font-body-md text-on-surface">
+      {/* 1. Header Bar with Back button */}
+      <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-2xl bg-surface-container-lowest/90 backdrop-blur-md border border-outline-variant/30 shadow-2xs gap-2">
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          <span className="text-xl sm:text-2xl shrink-0">🏆</span>
+          <div className="min-w-0">
+            <h1 className="font-headline-sm text-sm sm:text-headline-sm text-on-surface font-black truncate">
+              Bảng Xếp Hạng Ngư Thủ
+            </h1>
+            <p className="font-body-sm text-[11px] sm:text-xs text-on-surface-variant hidden sm:block truncate">
+              Xếp hạng người chơi thật theo Xu, Cấp Độ & Kinh Nghiệm
+            </p>
           </div>
         </div>
+        {onBackToCat && (
+          <button
+            type="button"
+            className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full bg-surface-container-high hover:bg-surface-container text-xs font-bold text-on-surface flex items-center gap-1 transition-colors cursor-pointer shadow-xs shrink-0"
+            onClick={onBackToCat}
+          >
+            🐱 Về Mèo
+          </button>
+        )}
+      </div>
 
-        {/* Profile Content */}
-        <div className="flex items-center gap-space-md pt-2">
-          {/* Player Chibi Avatar */}
-          <div className="relative shrink-0">
-            <div className="w-16 h-16 rounded-full bg-surface-container-lowest p-1 shadow-[0_4px_10px_rgba(122,105,104,0.18)]">
-              <img
-                src={currentSkin?.image || AVATARS.player}
-                alt="Profile"
-                className="w-full h-full rounded-full object-cover"
-              />
+      {/* Guest Trial Mode Banner */}
+      {(!currentUser || currentUser.isAnonymous) && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/15 to-amber-500/10 border border-amber-300 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-2xl shrink-0">🐾</span>
+            <div className="min-w-0 text-left">
+              <span className="font-bold text-xs sm:text-sm text-amber-950 block truncate">
+                Chế độ Chơi Thử (Khách)
+              </span>
+              <p className="text-[11px] text-amber-800 leading-tight">
+                Tạo tài khoản hoặc đăng nhập để lưu điểm vĩnh viễn và đua Top chính thức!
+              </p>
             </div>
-            <span className="absolute -bottom-1 -right-1 bg-tertiary-container text-on-tertiary-container font-label-sm text-label-sm px-1.5 py-0.5 rounded-full shadow-sm flex items-center gap-0.5 font-bold">
-              <span className="material-symbols-outlined text-[10px]">star</span>
-              Lv.{myLevel}
-            </span>
           </div>
+          {onOpenAuth && (
+            <button
+              type="button"
+              className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs shrink-0 cursor-pointer transition-all"
+              onClick={() => {
+                soundManager.playPop();
+                onOpenAuth();
+              }}
+            >
+              ✨ Đăng Nhập Đua Top
+            </button>
+          )}
+        </div>
+      )}
 
-          {/* Details */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <h2 className="font-headline-sm text-headline-sm text-on-surface truncate font-bold">
-                {myDisplayName}
-              </h2>
-              <span className="material-symbols-outlined text-secondary text-[16px]">
-                verified
+      {/* 2. THÔNG BÁO THỨ HẠNG CỦA BẠN (DÀNH RIÊNG CHO NGƯỜI CHƠI) */}
+      <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white shadow-md border border-amber-300 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-3xl shrink-0 shadow-inner border border-white/30"
+            style={{ width: '52px', height: '52px', minWidth: '52px' }}
+          >
+            {myPosition === 1 ? '👑' : myPosition === 2 ? '🥈' : myPosition === 3 ? '🥉' : '🎖️'}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] uppercase tracking-wider font-extrabold text-amber-100">
+                Thứ Hạng Của Bạn
               </span>
+              <span className="px-2.5 py-0.5 rounded-full bg-white text-orange-950 text-xs font-black shadow-xs">
+                Top #{myPosition} / {totalPlayers}
+              </span>
+              {currentUser?.username && (
+                <span className="text-[11px] text-amber-100 font-medium">@{currentUser.username}</span>
+              )}
             </div>
-            <p className="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1 mt-0.5">
-              <span className="material-symbols-outlined text-primary text-[14px]">styler</span>
-              Skin đang mặc:{' '}
-              <span className="text-primary font-bold">
-                {currentSkin?.name || 'Mèo Cam Vui Vẻ'}
-              </span>
+            <p className="text-xs sm:text-sm font-black truncate text-white mt-0.5">
+              {myPosition === 1
+                ? '🎉 Quán Quân! Bạn đang dẫn đầu Bảng Xếp Hạng!'
+                : myPosition <= 3
+                ? `🔥 Xuất sắc! Bạn đang vinh danh trong Top ${myPosition} Bục Vinh Quang!`
+                : `Bạn đang ở vị trí Top #${myPosition} trên tổng số ${totalPlayers} ngư thủ`}
             </p>
           </div>
         </div>
 
-        {/* Personal Metrics Grid */}
-        <div className="grid grid-cols-2 gap-space-xs mt-space-md bg-surface-container-lowest/90 backdrop-blur-sm rounded-DEFAULT p-space-sm shadow-[inset_0_1px_3px_rgba(122,105,104,0.06)] border border-outline-variant/30">
-          <div className="flex items-center gap-2 px-2 py-1">
-            <div className="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-on-secondary-container text-[18px]">
-                set_meal
-              </span>
-            </div>
-            <div className="min-w-0">
-              <span className="font-body-sm text-body-sm text-on-surface-variant block text-xs">
-                Tổng cá đã câu
-              </span>
-              <span className="font-headline-sm text-headline-sm text-on-surface font-bold truncate">
-                {formatNumber(totalFishCaught)} 🐟
-              </span>
-            </div>
-          </div>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={isFetchingCloud}
+          className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 transition-all text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer border border-white/30"
+          title="Làm mới danh sách"
+        >
+          <span className={`material-symbols-outlined text-[16px] ${isFetchingCloud ? 'animate-spin' : ''}`}>refresh</span>
+          <span className="hidden sm:inline">Làm mới</span>
+        </button>
+      </div>
 
-          <div className="flex items-center gap-2 px-2 py-1">
-            <div className="w-8 h-8 rounded-full bg-tertiary-fixed flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-on-tertiary-fixed text-[18px]">
-                trophy
+      {/* 3. PLAYER PERSONAL STATS CARD */}
+      <section className="bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100/70 rounded-2xl p-4 shadow-sm relative overflow-hidden border border-amber-200/90">
+        <div className="flex items-center justify-between pb-3">
+          {/* Rank Badge Image & Name */}
+          <div className="flex items-center gap-2.5 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-full shadow-xs border border-amber-300/80">
+            <img
+              src={myRankTier?.badgeImage || '/images/cat_badges_webp/badge_01.webp'}
+              alt={myRankTier?.name || 'Tân Thủ'}
+              className="w-7 h-7 object-contain filter drop-shadow-xs shrink-0"
+            />
+            <div className="flex flex-col leading-tight">
+              <span className="text-xs font-black text-amber-950">
+                {myRankTier?.name || 'Tân Thủ'}
               </span>
-            </div>
-            <div className="min-w-0">
-              <span className="font-body-sm text-body-sm text-on-surface-variant block text-xs">
-                Cá lớn nhất
-              </span>
-              <span className="font-headline-sm text-headline-sm text-tertiary font-bold truncate">
-                {myBiggestFishKg > 0 ? myBiggestFishKg.toFixed(1) : '12.5'} kg
-              </span>
-              <span className="font-label-sm text-label-sm text-on-surface-variant block truncate">
-                Cá Ngừ Khổng Lồ
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 3. SEASONAL REWARD SPOTLIGHT */}
-      <section className="bg-tertiary-fixed/30 rounded-lg p-space-md shadow-[0_4px_12px_rgba(202,157,69,0.15)] flex items-center gap-space-md relative overflow-hidden border border-tertiary-fixed-dim/40">
-        <div className="w-12 h-12 rounded-full bg-tertiary-container text-on-tertiary-container flex items-center justify-center shrink-0 shadow-inner">
-          <span className="material-symbols-outlined text-[26px]">stars</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="font-label-lg text-label-lg text-on-tertiary-container font-bold">
-              Phần Thưởng Mùa Giải
-            </span>
-            <span className="bg-tertiary text-on-tertiary font-label-sm text-label-sm px-2 py-0.5 rounded-full font-bold">
-              Top 100
-            </span>
-          </div>
-          <p className="font-body-sm text-body-sm text-on-surface mt-0.5">
-            Còn <strong className="text-primary font-bold">3 ngày 14 giờ</strong> để nhận{' '}
-            <span className="font-bold text-tertiary">
-              Khung Avatar Mèo Thần Tài Kim Tiền
-            </span>!
-          </p>
-        </div>
-        <div className="w-10 h-10 rounded-full bg-surface-container-lowest p-1 shrink-0 shadow-sm">
-          <img
-            src={AVATARS.trophy}
-            alt="Trophy"
-            className="w-full h-full object-contain"
-          />
-        </div>
-      </section>
-
-      {/* 4. FILTER TABS (SQUISHY TOGGLE) */}
-      <section className="flex flex-col gap-space-xs">
-        <div className="flex items-center justify-between px-1">
-          <span className="font-label-lg text-label-lg text-on-surface flex items-center gap-1 font-bold">
-            <span className="material-symbols-outlined text-primary text-[18px]">
-              leaderboard
-            </span>{' '}
-            Bảng Vinh Danh
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSaveNow}
-              className="font-body-sm text-body-sm text-secondary hover:text-primary flex items-center gap-1 transition-colors cursor-pointer font-bold"
-              title={syncTimeText}
-            >
-              <span className="material-symbols-outlined text-[15px]">cloud_sync</span>
-              <span>Đồng bộ Rank</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[14px]">refresh</span>
-              <span>Làm mới</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 p-1 bg-surface-container-high rounded-full shadow-[inset_0_2px_4px_rgba(122,105,104,0.1)] gap-1">
-          <button
-            type="button"
-            onClick={() => handleTabClick('week')}
-            className={`filter-tab py-1.5 px-2 rounded-full font-label-md text-label-md text-center transition-all cursor-pointer font-bold ${
-              filterTab === 'week'
-                ? 'bg-surface-container-lowest text-primary shadow-[0_2px_6px_rgba(122,105,104,0.12)]'
-                : 'text-on-surface-variant hover:text-on-surface'
-            }`}
-          >
-            Tuần này
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTabClick('all')}
-            className={`filter-tab py-1.5 px-2 rounded-full font-label-md text-label-md text-center transition-all cursor-pointer font-bold ${
-              filterTab === 'all'
-                ? 'bg-surface-container-lowest text-primary shadow-[0_2px_6px_rgba(122,105,104,0.12)]'
-                : 'text-on-surface-variant hover:text-on-surface'
-            }`}
-          >
-            Mọi thời đại
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTabClick('record')}
-            className={`filter-tab py-1.5 px-2 rounded-full font-label-md text-label-md text-center transition-all cursor-pointer truncate font-bold ${
-              filterTab === 'record'
-                ? 'bg-surface-container-lowest text-primary shadow-[0_2px_6px_rgba(122,105,104,0.12)]'
-                : 'text-on-surface-variant hover:text-on-surface'
-            }`}
-          >
-            Cá Kỷ Lục
-          </button>
-        </div>
-      </section>
-
-      {/* 5. TOP 3 PODIUM SHOWCASE (ASYMMETRIC VISUAL STAGING) */}
-      <section className="bg-surface-container-lowest rounded-xl p-space-md shadow-[0_6px_20px_rgba(122,105,104,0.08)] flex flex-col gap-space-md border border-outline-variant/30">
-        <div className="text-center">
-          <span className="font-headline-sm text-headline-sm text-on-surface font-bold">
-            Top 3 Bục Vinh Quang
-          </span>
-          <p className="font-body-sm text-body-sm text-on-surface-variant">
-            Huyền thoại câu cá siêu cấp của đảo Mèo
-          </p>
-        </div>
-
-        {/* Podium Staging Grid (Silver 2nd, Gold 1st Center Elevated, Bronze 3rd) */}
-        <div className="grid grid-cols-3 items-end gap-2 pt-4 pb-2">
-          {/* 2ND PLACE (SILVER) */}
-          <div className="flex flex-col items-center text-center">
-            <div className="relative mb-2">
-              <div className="w-14 h-14 rounded-full bg-surface-container-high p-1 shadow-[0_3px_10px_rgba(122,105,104,0.15)] ring-2 ring-surface-variant">
-                <img
-                  src={podiumData.second.avatar}
-                  alt="Silver"
-                  className="w-full h-full rounded-full object-cover"
-                />
-              </div>
-              <span className="absolute -top-2 -left-1 w-6 h-6 rounded-full bg-surface-variant text-on-surface font-label-sm text-label-sm flex items-center justify-center shadow-md font-bold">
-                2
-              </span>
-              <span className="material-symbols-outlined text-outline absolute -bottom-1 -right-1 text-[18px]">
-                military_tech
-              </span>
-            </div>
-            <span className="font-label-md text-label-md text-on-surface truncate w-full font-bold">
-              {podiumData.second.name}
-            </span>
-            <span className="font-body-sm text-body-sm text-on-surface-variant">
-              Lv.{podiumData.second.level}
-            </span>
-
-            {/* Pillar #2 */}
-            <div className="w-full h-24 bg-surface-container rounded-t-lg mt-2 flex flex-col items-center justify-center p-1 shadow-inner">
-              <span className="font-label-sm text-label-sm text-primary font-bold">
-                {formatNumber(podiumData.second.fishCount)}
-              </span>
-              <span className="font-body-sm text-body-sm text-on-surface-variant text-[10px]">
-                🐟 Cá
-              </span>
-              <span className="mt-1 px-1.5 py-0.5 rounded-full bg-surface-container-lowest font-label-sm text-label-sm text-outline font-bold">
-                Bạc
+              <span className="text-[10px] text-amber-700 font-bold">
+                {myRankTier?.badge} Cấp Bậc
               </span>
             </div>
           </div>
 
-          {/* 1ST PLACE (GOLD - Tallest & Decorated) */}
-          <div className="flex flex-col items-center text-center -mt-4">
-            {/* Floating Gold Crown */}
-            <span className="material-symbols-outlined text-tertiary-container text-[28px] animate-bounce mb-0.5">
-              crown
-            </span>
-            <div className="relative mb-2">
-              <div className="w-18 h-18 rounded-full bg-tertiary-fixed p-1.5 shadow-[0_6px_14px_rgba(202,157,69,0.35)] ring-4 ring-tertiary-container/30">
-                <img
-                  src={podiumData.first.avatar}
-                  alt="Gold"
-                  className="w-16 h-16 rounded-full object-cover"
-                />
-              </div>
-              <span className="absolute -top-2 -right-1 w-7 h-7 rounded-full bg-tertiary-container text-on-tertiary-container font-headline-sm text-headline-sm flex items-center justify-center shadow-md font-bold">
-                1
-              </span>
-            </div>
-            <span className="font-label-lg text-label-lg text-primary truncate w-full font-bold">
-              {podiumData.first.name}
-            </span>
-            <span className="font-label-sm text-label-sm bg-primary-fixed text-on-primary-fixed-variant px-2 py-0.2 rounded-full mt-0.5 font-bold truncate max-w-[110px]">
-              {podiumData.first.skinTitle || 'Mèo Tuxedo Quý Tộc'}
-            </span>
-            <span className="font-body-sm text-body-sm text-tertiary font-bold mt-0.5 truncate max-w-[110px]">
-              {podiumData.first.recordFish || 'Cá Vua 48.2kg'}
-            </span>
-
-            {/* Pillar #1 */}
-            <div className="w-full h-32 bg-tertiary-fixed/60 rounded-t-lg mt-2 flex flex-col items-center justify-center p-1 shadow-[inset_0_2px_4px_rgba(202,157,69,0.2)]">
-              <span className="font-headline-sm text-headline-sm text-on-tertiary-fixed font-bold leading-none">
-                {podiumData.first.scoreDisplay}
-              </span>
-              <span className="font-body-sm text-body-sm text-tertiary text-[11px] font-bold">
-                🐟 Tổng Cá
-              </span>
-              <span className="mt-2 px-2.5 py-0.5 rounded-full bg-tertiary-container text-on-tertiary-container font-label-sm text-label-sm font-bold shadow-sm whitespace-nowrap">
-                👑 Quán Quân
-              </span>
-            </div>
-          </div>
-
-          {/* 3RD PLACE (BRONZE) */}
-          <div className="flex flex-col items-center text-center">
-            <div className="relative mb-2">
-              <div className="w-14 h-14 rounded-full bg-surface-container-high p-1 shadow-[0_3px_10px_rgba(122,105,104,0.15)] ring-2 ring-outline-variant">
-                <img
-                  src={podiumData.third.avatar}
-                  alt="Bronze"
-                  className="w-full h-full rounded-full object-cover"
-                />
-              </div>
-              <span className="absolute -top-2 -right-1 w-6 h-6 rounded-full bg-outline-variant text-on-surface font-label-sm text-label-sm flex items-center justify-center shadow-md font-bold">
-                3
-              </span>
-              <span className="material-symbols-outlined text-outline text-[18px] absolute -bottom-1 -left-1">
-                emoji_events
-              </span>
-            </div>
-            <span className="font-label-md text-label-md text-on-surface truncate w-full font-bold">
-              {podiumData.third.name}
-            </span>
-            <span className="font-body-sm text-body-sm text-on-surface-variant">
-              Lv.{podiumData.third.level}
-            </span>
-
-            {/* Pillar #3 */}
-            <div className="w-full h-20 bg-surface-container-highest rounded-t-lg mt-2 flex flex-col items-center justify-center p-1 shadow-inner">
-              <span className="font-label-sm text-label-sm text-primary font-bold">
-                {formatNumber(podiumData.third.fishCount)}
-              </span>
-              <span className="font-body-sm text-body-sm text-on-surface-variant text-[10px]">
-                🐟 Cá
-              </span>
-              <span className="mt-1 px-1.5 py-0.5 rounded-full bg-surface-container-lowest font-label-sm text-label-sm text-on-surface-variant font-bold">
-                Đồng
-              </span>
-            </div>
+          {/* Current Rank Position */}
+          <div className="bg-amber-600 text-white font-bold px-3 py-1 rounded-full shadow-xs flex items-center gap-1.5 text-xs">
+            <span className="opacity-90">Hạng:</span>
+            <span className="font-black text-sm tracking-tight">#{myPosition}</span>
           </div>
         </div>
-      </section>
 
-      {/* 6. LEADERBOARD RANKED LIST (4TH - 10TH) */}
-      <section className="flex flex-col gap-space-xs">
-        <div className="flex items-center justify-between px-1">
-          <h3 className="font-label-lg text-label-lg text-on-surface font-bold">
-            Top Ngư Thủ Tiếp Theo
-          </h3>
-          <span className="font-label-sm text-label-sm text-on-surface-variant">
-            Hạng 4 – {rankedPlayers.length + 3}
-          </span>
-        </div>
-
-        <div className="flex flex-col gap-space-xs" id="rank-list">
-          {rankedPlayers.map((player) => (
+        {/* Profile Content */}
+        <div className="flex items-center gap-3 pt-1">
+          <div className="relative shrink-0">
             <div
-              key={player.rank}
-              className="flex items-center justify-between p-space-sm bg-surface-container-lowest rounded-DEFAULT shadow-[0_2px_8px_rgba(122,105,104,0.06)] active:scale-[0.99] transition-transform border border-outline-variant/30"
+              className="rounded-full bg-white p-0.5 shadow-sm border-2 border-amber-400 overflow-hidden"
+              style={{ width: '56px', height: '56px', minWidth: '56px', minHeight: '56px' }}
             >
-              <div className="flex items-center gap-space-sm">
-                <span className="w-6 font-headline-sm text-headline-sm text-on-surface-variant text-center font-bold">
-                  {player.rank}
-                </span>
-                <div className="relative w-11 h-11 rounded-full bg-surface-container p-0.5 shrink-0 ml-1">
+              <img
+                src={myActualAvatar}
+                alt="Profile"
+                className="w-full h-full rounded-full object-cover"
+              />
+            </div>
+            <span className="absolute -bottom-1 -right-1 bg-emerald-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-xs border border-white">
+              Lv.{myLevel}
+            </span>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-base font-black text-slate-800 truncate">
+                {myActualName}
+              </h2>
+              <span className="material-symbols-outlined text-amber-500 text-[18px]">verified</span>
+            </div>
+            <p className="text-xs text-slate-600 truncate mt-0.5">
+              Skin: <strong className="text-orange-700">{currentSkin?.name || 'Mèo Mặc Định'}</strong>
+            </p>
+          </div>
+        </div>
+
+        {/* 3 Metrics: Coins, Level, XP */}
+        <div className="grid grid-cols-3 gap-2 mt-3.5 bg-white/90 backdrop-blur-xs rounded-xl p-2.5 border border-amber-200/60 shadow-2xs">
+          <div className="flex flex-col items-center text-center">
+            <span className="text-[11px] text-slate-500 font-medium">Số Xu</span>
+            <span className="text-xs sm:text-sm font-black text-amber-900 truncate max-w-full">
+              🪙 {formatNumber(myCoins)}
+            </span>
+          </div>
+          <div className="flex flex-col items-center text-center border-x border-amber-200">
+            <span className="text-[11px] text-slate-500 font-medium">Cấp Độ</span>
+            <span className="text-xs sm:text-sm font-black text-orange-900 truncate max-w-full">
+              ⭐ Lv.{myLevel}
+            </span>
+          </div>
+          <div className="flex flex-col items-center text-center">
+            <span className="text-[11px] text-slate-500 font-medium">Kinh Nghiệm</span>
+            <span className="text-xs sm:text-sm font-black text-indigo-900 truncate max-w-full">
+              ✨ {formatNumber(myXp)}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. 7 RANK BADGES PROGRESSION STRIP (Tân thủ -> Siêu Huyền Thoại) */}
+      <section className="bg-white rounded-2xl p-3.5 shadow-sm border border-orange-100 flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">🎖️</span>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wide">
+              7 Cấp Bậc Danh Hiệu Đảo Mèo
+            </h3>
+          </div>
+          <button
+            type="button"
+            className="text-[11px] font-bold text-orange-600 hover:text-orange-700 flex items-center gap-0.5 cursor-pointer"
+            onClick={() => setShowTiersModal(!showTiersModal)}
+          >
+            <span>{showTiersModal ? 'Thu gọn ▲' : 'Xem chi tiết ▼'}</span>
+          </button>
+        </div>
+
+        {/* Horizontal scroll of all 7 Badges */}
+        <div className="flex gap-2 overflow-x-auto pb-1 pt-1 no-scrollbar">
+          {allTiersList.map((tier) => {
+            const isUnlocked = myLevel >= tier.minLevel;
+            const isCurrent = myRankTier?.key === tier.key;
+            return (
+              <div
+                key={tier.key}
+                className={`shrink-0 w-24 p-2 rounded-xl border flex flex-col items-center text-center transition-all ${
+                  isCurrent
+                    ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-300 shadow-xs'
+                    : isUnlocked
+                    ? 'border-emerald-200 bg-emerald-50/40'
+                    : 'border-slate-200 bg-slate-50 opacity-60'
+                }`}
+              >
+                <div className="w-10 h-10 mb-1 flex items-center justify-center relative">
                   <img
-                    src={player.avatar}
-                    alt={player.name}
-                    className="w-full h-full rounded-full object-cover"
+                    src={tier.badgeImage}
+                    alt={tier.name}
+                    className="w-full h-full object-contain filter drop-shadow-xs"
+                  />
+                  {isCurrent && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-500 ring-1 ring-white" />
+                  )}
+                </div>
+                <span className="text-[11px] font-black text-slate-800 truncate w-full">
+                  {tier.name}
+                </span>
+                <span className="text-[10px] text-slate-500 font-semibold truncate w-full">
+                  Lv.{tier.minLevel}+
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {showTiersModal && (
+          <div className="mt-2 pt-2 border-t border-slate-100 flex flex-col gap-1.5 animate-fade-in text-xs">
+            {allTiersList.map((tier) => (
+              <div
+                key={`desc_${tier.key}`}
+                className="flex items-center justify-between p-1.5 rounded-lg bg-slate-50/80"
+              >
+                <div className="flex items-center gap-2">
+                  <img src={tier.badgeImage} alt={tier.name} className="w-6 h-6 object-contain" />
+                  <span className="font-bold text-slate-800">{tier.name}</span>
+                  <span className="text-[10px] text-slate-500">(Cấp {tier.minLevel} - {tier.maxLevel === 999 ? '∞' : tier.maxLevel})</span>
+                </div>
+                <span className="text-[11px] text-slate-600 italic line-clamp-1 max-w-[180px]">
+                  {tier.description}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* 5. CRITERIA TABS SELECTOR (Xu, Level, XP) */}
+      <section className="bg-white rounded-2xl p-3 shadow-sm flex flex-col gap-2 border border-orange-100">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-xs font-black text-slate-800 uppercase tracking-wide">
+            Bộ Lọc Tiêu Chí
+          </span>
+          <span className="text-[11px] text-slate-500 font-medium">
+            {totalPlayers} người chơi thật
+          </span>
+        </div>
+
+        {/* 3 Criteria Tabs Segmented Control */}
+        <div className="grid grid-cols-3 p-1 bg-surface-container-high rounded-2xl shadow-inner gap-1">
+          <button
+            type="button"
+            onClick={() => handleCriterionClick('coins')}
+            className={`py-2 px-1 rounded-xl text-xs text-center transition-all cursor-pointer font-black flex items-center justify-center gap-1 ${
+              criterion === 'coins'
+                ? 'bg-white text-amber-900 shadow-sm ring-1 ring-amber-300'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span>🪙</span>
+            <span>Số Xu</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCriterionClick('level')}
+            className={`py-2 px-1 rounded-xl text-xs text-center transition-all cursor-pointer font-black flex items-center justify-center gap-1 ${
+              criterion === 'level'
+                ? 'bg-white text-orange-900 shadow-sm ring-1 ring-orange-300'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span>⭐</span>
+            <span>Level</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCriterionClick('xp')}
+            className={`py-2 px-1 rounded-xl text-xs text-center transition-all cursor-pointer font-black flex items-center justify-center gap-1 ${
+              criterion === 'xp'
+                ? 'bg-white text-indigo-900 shadow-sm ring-1 ring-indigo-300'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span>✨</span>
+            <span>Điểm XP</span>
+          </button>
+        </div>
+      </section>
+
+      {/* 6. TOP 3 PODIUM SHOWCASE - CÁC HẠNG AVATAR BẰNG NHAU HOÀN TOÀN */}
+      <section className="bg-white rounded-2xl p-4 shadow-sm flex flex-col gap-3 border border-orange-100">
+        <div className="text-center">
+          <span className="text-sm font-black text-slate-800 block">
+            Top 3 Vinh Quang ({criterion === 'coins' ? 'Đại Gia Xu Vàng' : criterion === 'level' ? 'Cấp Độ Thượng Thừa' : 'Bậc Thầy Kinh Nghiệm'})
+          </span>
+          <p className="text-[11px] text-slate-500">
+            Huyền thoại dẫn đầu bảng xếp hạng
+          </p>
+        </div>
+
+        {/* Podium Grid (Silver 2nd Left, Gold 1st Center Elevated, Bronze 3rd Right) */}
+        <div className="grid grid-cols-3 items-end gap-2 pt-3 pb-1">
+          {/* 2ND PLACE (SILVER - HẠNG 2) */}
+          {top2 ? (() => {
+            const t2Tier = getRankTierByLevel(top2.level);
+            const score = renderScoreDisplay(top2);
+            return (
+              <div className="flex flex-col items-center text-center">
+                <span className="text-xl mb-1">🥈</span>
+                <div className="relative mb-2">
+                  <div
+                    className={`rounded-full bg-slate-100 p-0.5 shadow-md ring-4 overflow-hidden shrink-0 ${
+                      top2.isMe ? 'ring-amber-500 ring-offset-2' : 'ring-slate-300'
+                    }`}
+                    style={{ width: '74px', height: '74px', minWidth: '74px', minHeight: '74px' }}
+                  >
+                    <img src={top2.avatar} alt="Silver" className="w-full h-full rounded-full object-cover" />
+                  </div>
+                  <span className="absolute -top-1.5 -left-1 w-6 h-6 rounded-full bg-gradient-to-r from-slate-400 to-slate-500 text-white text-xs flex items-center justify-center font-black shadow-sm ring-2 ring-white">
+                    2
+                  </span>
+                  <img
+                    src={t2Tier.badgeImage}
+                    alt={t2Tier.name}
+                    className="w-5 h-5 object-contain absolute -bottom-1 -right-1 filter drop-shadow-xs"
+                    title={t2Tier.name}
                   />
                 </div>
-                <div className="min-w-0 ml-2">
-                  <div className="flex items-center gap-1">
-                    <span className="font-label-md text-label-md text-on-surface truncate font-bold">
-                      {player.name}
+
+                <div className="flex items-center justify-center gap-1 w-full max-w-[100px]">
+                  <span className="text-xs font-black text-slate-800 truncate">
+                    {top2.name}
+                  </span>
+                  {top2.isMe && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-black shrink-0">
+                      Bạn
                     </span>
-                    <span className="font-label-sm text-label-sm bg-secondary-container text-on-secondary-container px-1.5 py-0.2 rounded-full font-bold">
-                      Lv.{player.level}
-                    </span>
-                  </div>
-                  <span className="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-0.5">
-                    <span className="material-symbols-outlined text-[13px] text-tertiary">
-                      military_tech
-                    </span>{' '}
-                    {player.recordText}
+                  )}
+                </div>
+                <span className="text-[10px] text-slate-500 font-semibold truncate max-w-[90px]">
+                  {t2Tier.name}
+                </span>
+
+                {/* Pillar #2 (Height 94px) */}
+                <div
+                  className="w-full bg-gradient-to-t from-slate-200 via-slate-100 to-slate-50 rounded-t-2xl mt-2 flex flex-col items-center justify-center p-1 border-t-2 border-slate-300 shadow-2xs"
+                  style={{ height: '94px' }}
+                >
+                  <span className="text-xs font-black text-slate-800 leading-tight">
+                    {score.value}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-semibold">
+                    {score.unit}
+                  </span>
+                  <span className="mt-1 px-2 py-0.5 rounded-full bg-white text-[9px] font-bold text-slate-600 shadow-2xs">
+                    Hạng 2
                   </span>
                 </div>
               </div>
-              <div className="text-right shrink-0">
-                <span className="font-label-lg text-label-lg text-primary font-bold">
-                  {formatNumber(player.fishCount)}
-                </span>
-                <span className="block font-label-sm text-label-sm text-on-surface-variant">
-                  🐟 Cá
-                </span>
+            );
+          })() : (
+            <div className="flex flex-col items-center text-center opacity-60">
+              <span className="text-xl mb-1 text-slate-300">🥈</span>
+              <div
+                className="relative rounded-full shrink-0 p-0.5 border-2 border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-300 mb-2"
+                style={{ width: '74px', height: '74px', minWidth: '74px', minHeight: '74px' }}
+              >
+                <span className="text-2xl">🐾</span>
+              </div>
+              <span className="text-xs font-bold text-slate-400 truncate w-full">Chờ Ngư Thủ</span>
+              <span className="text-[10px] text-slate-400">Chưa có</span>
+              <div
+                className="w-full bg-slate-100/70 rounded-t-2xl mt-2 flex flex-col items-center justify-center p-1 border-t border-slate-200"
+                style={{ height: '94px' }}
+              >
+                <span className="text-[10px] text-slate-400 font-bold">Vị trí trống</span>
+                <span className="mt-1 px-1.5 py-0.2 rounded-full bg-white text-[9px] font-bold text-slate-400 shadow-2xs">Hạng 2</span>
               </div>
             </div>
-          ))}
+          )}
+
+          {/* 1ST PLACE (GOLD - QUÁN QUÂN - Center Elevated) */}
+          {top1 ? (() => {
+            const t1Tier = getRankTierByLevel(top1.level);
+            const score = renderScoreDisplay(top1);
+            return (
+              <div className="flex flex-col items-center text-center -mt-4">
+                <span className="text-2xl animate-bounce mb-0.5">👑</span>
+                <div className="relative mb-2">
+                  <div
+                    className={`rounded-full bg-amber-50 p-0.5 shadow-lg ring-4 overflow-hidden shrink-0 ${
+                      top1.isMe ? 'ring-amber-500 ring-offset-2' : 'ring-amber-400'
+                    }`}
+                    style={{ width: '74px', height: '74px', minWidth: '74px', minHeight: '74px' }}
+                  >
+                    <img src={top1.avatar} alt="Gold" className="w-full h-full rounded-full object-cover" />
+                  </div>
+                  <span className="absolute -top-1.5 -right-1 w-6 h-6 rounded-full bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-xs flex items-center justify-center font-black shadow-md ring-2 ring-white">
+                    1
+                  </span>
+                  <img
+                    src={t1Tier.badgeImage}
+                    alt={t1Tier.name}
+                    className="w-6 h-6 object-contain absolute -bottom-1 -right-1 filter drop-shadow-xs"
+                    title={t1Tier.name}
+                  />
+                </div>
+
+                <div className="flex items-center justify-center gap-1 w-full max-w-[110px]">
+                  <span className="text-xs font-black text-amber-950 truncate">
+                    {top1.name}
+                  </span>
+                  {top1.isMe && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-black shrink-0">
+                      Bạn
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] text-amber-800 font-bold bg-amber-100/90 px-2 py-0.2 rounded-full mt-0.5 truncate max-w-[100px]">
+                  {t1Tier.name}
+                </span>
+
+                {/* Pillar #1 (Height 120px) */}
+                <div
+                  className="w-full bg-gradient-to-t from-amber-300 via-amber-200 to-amber-100 rounded-t-2xl mt-2 flex flex-col items-center justify-center p-1 border-t-2 border-amber-400 shadow-sm"
+                  style={{ height: '120px' }}
+                >
+                  <span className="text-sm font-black text-amber-950 leading-tight">
+                    {score.value}
+                  </span>
+                  <span className="text-[10px] text-amber-800 font-bold">
+                    {score.unit}
+                  </span>
+                  <span className="mt-1 px-2.5 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-black shadow-xs">
+                    Quán Quân
+                  </span>
+                </div>
+              </div>
+            );
+          })() : null}
+
+          {/* 3RD PLACE (BRONZE - HẠNG 3) */}
+          {top3 ? (() => {
+            const t3Tier = getRankTierByLevel(top3.level);
+            const score = renderScoreDisplay(top3);
+            return (
+              <div className="flex flex-col items-center text-center">
+                <span className="text-xl mb-1">🥉</span>
+                <div className="relative mb-2">
+                  <div
+                    className={`rounded-full bg-orange-50 p-0.5 shadow-md ring-4 overflow-hidden shrink-0 ${
+                      top3.isMe ? 'ring-amber-500 ring-offset-2' : 'ring-amber-700/60'
+                    }`}
+                    style={{ width: '74px', height: '74px', minWidth: '74px', minHeight: '74px' }}
+                  >
+                    <img src={top3.avatar} alt="Bronze" className="w-full h-full rounded-full object-cover" />
+                  </div>
+                  <span className="absolute -top-1.5 -right-1 w-6 h-6 rounded-full bg-gradient-to-r from-amber-700 to-amber-800 text-white text-xs flex items-center justify-center font-black shadow-sm ring-2 ring-white">
+                    3
+                  </span>
+                  <img
+                    src={t3Tier.badgeImage}
+                    alt={t3Tier.name}
+                    className="w-5 h-5 object-contain absolute -bottom-1 -left-1 filter drop-shadow-xs"
+                    title={t3Tier.name}
+                  />
+                </div>
+
+                <div className="flex items-center justify-center gap-1 w-full max-w-[100px]">
+                  <span className="text-xs font-black text-slate-800 truncate">
+                    {top3.name}
+                  </span>
+                  {top3.isMe && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-black shrink-0">
+                      Bạn
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] text-slate-500 font-semibold truncate max-w-[90px]">
+                  {t3Tier.name}
+                </span>
+
+                {/* Pillar #3 (Height 78px) */}
+                <div
+                  className="w-full bg-gradient-to-t from-orange-200 via-orange-100 to-orange-50 rounded-t-2xl mt-2 flex flex-col items-center justify-center p-1 border-t-2 border-orange-300 shadow-2xs"
+                  style={{ height: '78px' }}
+                >
+                  <span className="text-xs font-black text-amber-950 leading-tight">
+                    {score.value}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-semibold">
+                    {score.unit}
+                  </span>
+                  <span className="mt-1 px-2 py-0.5 rounded-full bg-white text-[9px] font-bold text-amber-800 shadow-2xs">
+                    Hạng 3
+                  </span>
+                </div>
+              </div>
+            );
+          })() : (
+            <div className="flex flex-col items-center text-center opacity-60">
+              <span className="text-xl mb-1 text-slate-300">🥉</span>
+              <div
+                className="relative rounded-full shrink-0 p-0.5 border-2 border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-300 mb-2"
+                style={{ width: '74px', height: '74px', minWidth: '74px', minHeight: '74px' }}
+              >
+                <span className="text-2xl">🐾</span>
+              </div>
+              <span className="text-xs font-bold text-slate-400 truncate w-full">Chờ Ngư Thủ</span>
+              <span className="text-[10px] text-slate-400">Chưa có</span>
+              <div
+                className="w-full bg-slate-100/70 rounded-t-2xl mt-2 flex flex-col items-center justify-center p-1 border-t border-slate-200"
+                style={{ height: '78px' }}
+              >
+                <span className="text-[10px] text-slate-400 font-bold">Vị trí trống</span>
+                <span className="mt-1 px-1.5 py-0.2 rounded-full bg-white text-[9px] font-bold text-slate-400 shadow-2xs">Hạng 3</span>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
-      {/* 7. TOAST NOTIFICATION */}
+      {/* 7. LEADERBOARD RANKED LIST (HẠNG 4 TRỞ ĐI) */}
+      <section className="flex flex-col gap-2">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-xs font-black text-slate-700 uppercase tracking-wide">
+            Top Ngư Thủ Tiếp Theo (Hạng 4 – {Math.max(4, sortedPlayers.length)})
+          </h3>
+          <span className="text-[11px] text-slate-500 font-medium">
+            Sắp xếp theo {criterion === 'coins' ? 'Xu 🪙' : criterion === 'level' ? 'Level ⭐' : 'XP ✨'}
+          </span>
+        </div>
+
+        {remainingPlayers.length === 0 ? (
+          <div className="p-6 text-center bg-white rounded-2xl border border-dashed border-slate-200 flex flex-col items-center gap-1.5">
+            <span className="text-2xl">🎣</span>
+            <p className="text-xs font-bold text-slate-600">
+              Chưa có ngư thủ nào từ Hạng 4 trở đi
+            </p>
+            <p className="text-[11px] text-slate-400">
+              Hãy mời bạn bè cùng đăng ký tài khoản để cùng nhau đua Top!
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {remainingPlayers.map((player, idx) => {
+              const rankNum = idx + 4;
+              const playerTier = getRankTierByLevel(player.level);
+              const score = renderScoreDisplay(player);
+
+              return (
+                <div
+                  key={player.id}
+                  className={`flex items-center justify-between p-2.5 rounded-xl transition-all ${
+                    player.isMe
+                      ? 'bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-400 shadow-sm ring-2 ring-amber-300/40'
+                      : 'bg-white rounded-xl shadow-2xs border border-slate-100 hover:border-orange-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-6 text-sm font-black text-slate-400 text-center shrink-0">
+                      {rankNum}
+                    </span>
+                    <div
+                      className="relative rounded-full bg-slate-100 p-0.5 shrink-0 overflow-hidden border border-slate-200"
+                      style={{ width: '42px', height: '42px', minWidth: '42px', minHeight: '42px' }}
+                    >
+                      <img
+                        src={player.avatar}
+                        alt={player.name}
+                        className="w-full h-full rounded-full object-cover"
+                      />
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-black text-slate-800 truncate">
+                          {player.name}
+                        </span>
+                        {player.isMe && (
+                          <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-black shrink-0">
+                            Bạn
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <img
+                          src={playerTier.badgeImage}
+                          alt={playerTier.name}
+                          className="w-4 h-4 object-contain shrink-0"
+                        />
+                        <span className="text-[10px] text-slate-500 font-semibold truncate">
+                          {playerTier.name} • Lv.{player.level}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0 ml-2">
+                    <span className="text-xs sm:text-sm font-black text-orange-950 block">
+                      {score.value}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-semibold block">
+                      {score.unit}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* 8. TOAST NOTIFICATION */}
       <div
         className={`fixed top-20 left-4 right-4 z-50 transform transition-all duration-300 max-w-md mx-auto ${
           showToast
             ? 'opacity-100 translate-y-0 pointer-events-auto'
             : '-translate-y-24 opacity-0 pointer-events-none'
         }`}
-        id="save-toast"
       >
-        <div className="bg-surface-container-lowest rounded-xl p-space-md shadow-[0_12px_28px_rgba(74,62,61,0.2)] flex items-center gap-space-sm border-2 border-secondary-container">
-          <div className="w-10 h-10 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-[24px]">cloud_done</span>
+        <div className="bg-slate-900/95 text-white rounded-2xl p-3 shadow-xl flex items-center gap-2.5 border border-white/20">
+          <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-[20px]">check</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-label-md text-label-md text-on-surface font-bold">
-              {toastMessage.title}
-            </p>
-            <p className="font-body-sm text-body-sm text-on-surface-variant">
-              {toastMessage.subtitle}
-            </p>
+            <p className="text-xs font-black text-white">{toastMessage.title}</p>
+            <p className="text-[11px] text-slate-300 truncate">{toastMessage.subtitle}</p>
           </div>
         </div>
       </div>

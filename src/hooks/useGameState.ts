@@ -12,11 +12,12 @@ import {
   getCatGrowthStage,
 } from '../data/rankTiers';
 import type { FoodItem, MealPlan } from '../data/foodShop';
-import { getRodById } from '../data/fishingRods';
-import { type FashionDecorItem } from '../data/fashionAndDecor';
+import { getRodById, getRodRepairCost } from '../data/fishingRods';
+import { type FashionDecorItem, getFashionItemById, getToyRewardConfig } from '../data/fashionAndDecor';
 import { authService, type UserProfileInfo } from '../services/authService';
 import { cloudSaveService } from '../services/cloudSaveService';
 import { leaderboardService } from '../services/leaderboardService';
+import { auth } from '../services/firebase';
 import {
   calculateUpgradeCost,
   calculateClickPower,
@@ -84,27 +85,91 @@ export function useGameState() {
   // User Authentication & Cloud Sync State
   const [currentUser, setCurrentUser] = useState<UserProfileInfo | null>(() => authService.getCurrentUser());
 
+  const dataRef = useRef(data);
+  dataRef.current = data;
+
+  // Tải dữ liệu người chơi từ Cloud Firestore
+  const loadUserDataFromCloud = useCallback(async (user: UserProfileInfo) => {
+    if (!user || user.isAnonymous) return null;
+    const cloudData = await cloudSaveService.loadFromCloud(user.uid);
+    if (cloudData) {
+      const userCatName = (cloudData.catName && cloudData.catName !== 'Mèo Cưng')
+        ? cloudData.catName
+        : (user.displayName || cloudData.catName || 'Mèo Cưng');
+      const restored: GameSaveData = {
+        ...DEFAULT_SAVE_DATA,
+        ...cloudData,
+        catName: userCatName,
+        displayName: userCatName,
+        catAvatar: cloudData.catAvatar || user.photoURL || '/images/cat_avatars_webp/avatar_01.webp',
+        username: cloudData.username || user.username || '',
+        fishBasket: Array.isArray(cloudData.fishBasket) ? cloudData.fishBasket : [],
+        lastSaved: Date.now(),
+      };
+      setData(restored);
+      saveGame(restored);
+      return restored;
+    }
+    return null;
+  }, []);
+
   useEffect(() => {
     const unsub = authService.onAuthStateChanged(async (user) => {
       setCurrentUser(user);
-      if (user) {
-        const cloudData = await cloudSaveService.loadFromCloud(user.uid);
-        if (cloudData) {
-          setData((local) => {
-            const cloudProgress = (cloudData.totalFish || 0) + (cloudData.xp || 0);
-            const localProgress = (local.totalFish || 0) + (local.xp || 0);
-            const chosen = cloudProgress > localProgress ? { ...cloudData, lastSaved: Date.now() } : local;
-            return {
-              ...DEFAULT_SAVE_DATA,
-              ...chosen,
-              fishBasket: Array.isArray(chosen.fishBasket) ? chosen.fishBasket : [],
-            };
+      if (user && !user.isAnonymous) {
+        // Người dùng đã đăng nhập: Tải đúng dữ liệu của tài khoản này từ Firestore!
+        const restored = await loadUserDataFromCloud(user);
+        if (!restored) {
+          // Chưa có save trên cloud (mới tạo tài khoản), lập tức lưu save local hiện tại lên cloud!
+          const currentLocal = dataRef.current;
+          const userCatName = (currentLocal.catName && currentLocal.catName !== 'Mèo Cưng')
+            ? currentLocal.catName
+            : (user.displayName || currentLocal.catName || 'Mèo Cưng');
+          const lvl = calculateLevelFromTotalXp(currentLocal.xp || 0);
+          const enriched: GameSaveData = {
+            ...currentLocal,
+            level: lvl.level,
+            catName: userCatName,
+            displayName: userCatName,
+            catAvatar: user.photoURL || currentLocal.catAvatar || '/images/cat_avatars_webp/avatar_01.webp',
+            username: user.username || currentLocal.username || '',
+            lastSaved: Date.now(),
+          };
+          setData(enriched);
+          saveGame(enriched);
+          await cloudSaveService.saveToCloud(user.uid, enriched);
+          await leaderboardService.updateMyEntry({
+            uid: user.uid,
+            displayName: userCatName,
+            catName: userCatName,
+            username: user.username || '',
+            photoURL: user.photoURL || enriched.catAvatar || '/images/cat_avatars_webp/avatar_01.webp',
+            level: lvl.level,
+            xp: enriched.xp || 0,
+            rankTierKey: lvl.rankTier.key,
+            rankTierName: lvl.rankTier.name,
+            rankBadge: lvl.rankTier.badge,
+            coins: enriched.fish || 0,
+            biggestFishKg: enriched.biggestFishKg || 0,
+            equippedSkin: enriched.equippedSkin || 'orange_tabby',
+            catStageLabel: getCatGrowthStage(lvl.level).label,
+            updatedAt: Date.now(),
           });
         }
+      } else {
+        // Đã đăng xuất (hoặc chưa đăng nhập): RESET TOÀN BỘ dữ liệu về ban đầu trò chơi!
+        resetSavedGame();
+        setData({
+          ...DEFAULT_SAVE_DATA,
+          lastSaved: Date.now(),
+        });
+        setComboCount(0);
+        setFloatingItems([]);
+        setSparkles([]);
       }
     });
     return () => unsub();
-  }, []);
+  }, [loadUserDataFromCloud]);
 
   // Level & Cat Growth Stage Calculations
   const levelInfo = useMemo(() => {
@@ -115,34 +180,80 @@ export function useGameState() {
     return getCatGrowthStage(levelInfo.level);
   }, [levelInfo.level]);
 
-  // Sync with Firestore & Leaderboard
-  const syncToCloud = useCallback(async () => {
-    if (!currentUser) return;
-    await cloudSaveService.saveToCloud(currentUser.uid, data);
+  // Sync with Firestore & Leaderboard (Luôn lấy dataRef.current mới nhất)
+  const syncToCloud = useCallback(async (overrideUser?: UserProfileInfo, overrideData?: GameSaveData) => {
+    const targetUser = overrideUser || currentUser || authService.getCurrentUser();
+    if (!targetUser || targetUser.isAnonymous || !auth.currentUser) return;
+    const targetData = overrideData || dataRef.current;
+    const lvl = calculateLevelFromTotalXp(targetData.xp || 0);
+    const stg = getCatGrowthStage(lvl.level);
+    const userCatName = (targetData.catName && targetData.catName !== 'Mèo Cưng')
+      ? targetData.catName
+      : (targetUser.displayName || targetData.catName || 'Mèo Cưng');
+
+    const fullData: GameSaveData = {
+      ...targetData,
+      level: lvl.level,
+      catName: userCatName,
+      displayName: userCatName,
+      username: targetUser.username || targetData.username || '',
+      lastSaved: Date.now(),
+    };
+
+    await cloudSaveService.saveToCloud(targetUser.uid, fullData);
     await leaderboardService.updateMyEntry({
-      uid: currentUser.uid,
-      displayName: currentUser.displayName,
-      level: levelInfo.level,
-      xp: data.xp,
-      rankTierKey: levelInfo.rankTier.key,
-      rankTierName: levelInfo.rankTier.name,
-      rankBadge: levelInfo.rankTier.badge,
-      coins: data.fish,
-      biggestFishKg: data.biggestFishKg,
-      equippedSkin: data.equippedSkin,
-      catStageLabel: catStage.label,
+      uid: targetUser.uid,
+      displayName: userCatName,
+      catName: userCatName,
+      username: targetUser.username || '',
+      photoURL: targetUser.photoURL || fullData.catAvatar || '/images/cat_avatars_webp/avatar_01.webp',
+      level: lvl.level,
+      xp: fullData.xp || 0,
+      rankTierKey: lvl.rankTier.key,
+      rankTierName: lvl.rankTier.name,
+      rankBadge: lvl.rankTier.badge,
+      coins: fullData.fish || 0,
+      biggestFishKg: fullData.biggestFishKg || 0,
+      equippedSkin: fullData.equippedSkin || 'orange_tabby',
+      catStageLabel: stg.label,
       updatedAt: Date.now(),
     });
-  }, [currentUser, data, levelInfo, catStage]);
+  }, [currentUser]);
 
-  // Debounced auto-sync to cloud
+  // Tự động lưu tiến trình định kỳ mỗi 4 giây khi đang chơi (chỉ khi đã đăng nhập)
   useEffect(() => {
-    if (!currentUser) return;
-    const timer = setTimeout(() => {
-      syncToCloud();
+    if (!currentUser || currentUser.isAnonymous) return;
+    const interval = setInterval(() => {
+      if (currentUser && !currentUser.isAnonymous && auth.currentUser) {
+        syncToCloud();
+      }
     }, 4000);
-    return () => clearTimeout(timer);
-  }, [data, currentUser, syncToCloud]);
+    return () => clearInterval(interval);
+  }, [currentUser, syncToCloud]);
+
+  // Tự động lưu lên Cloud khi người chơi đóng tab hoặc ẩn ứng dụng
+  useEffect(() => {
+    if (!currentUser || currentUser.isAnonymous) return;
+
+    const handleBeforeUnload = () => {
+      if (auth.currentUser) {
+        syncToCloud();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && auth.currentUser) {
+        syncToCloud();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentUser, syncToCloud]);
 
   // Sync sound & music settings with soundManager
   useEffect(() => {
@@ -188,26 +299,73 @@ export function useGameState() {
 
   // Auto-fish rate per second (Hardcore: Ngừng hoạt động hoàn toàn nếu mèo đói hoặc khát!)
   const autoFishRate = useMemo(() => {
-    // Nếu đói < 15% hoặc khát < 15%, mèo kiệt sức hoàn toàn, auto-fish dừng hẳn
-    if (data.food < 15 || data.water < 15) {
+    const isSatiated = (data.satietyExpiresAt || 0) > Date.now();
+    // Nếu đói < 15% hoặc khát < 15% (và không có buff no lâu), mèo kiệt sức hoàn toàn, auto-fish dừng hẳn
+    if (!isSatiated && (data.food < 15 || data.water < 15)) {
       return 0;
     }
     const rawRate = calculateAutoFishRate(speedyLevel, royalLevel, currentSkin.autoBonusMultiplier);
     let statusMult = 1.0;
-    if (data.food >= 70 && data.water >= 70) {
+    if (isSatiated || (data.food >= 70 && data.water >= 70)) {
       statusMult = 1.15;
     } else if (data.food < 40 || data.water < 40) {
       statusMult = 0.5;
     }
     return Math.floor(rawRate * statusMult);
-  }, [speedyLevel, royalLevel, currentSkin.autoBonusMultiplier, data.food, data.water]);
+  }, [speedyLevel, royalLevel, currentSkin.autoBonusMultiplier, data.food, data.water, data.satietyExpiresAt]);
 
-  // Gradual food & water decay timer + auto-feed from active meal plan (Tăng tốc độ hao hụt thể lực)
+  // Gradual food & water decay timer + auto-feed from active meal plan (Hao hụt theo mức chia thời gian của món ăn)
   useEffect(() => {
     const petTimer = setInterval(() => {
       setData((prev) => {
-        let newFood = Math.max(0, Math.round((prev.food - 0.7) * 10) / 10);
-        let newWater = Math.max(0, Math.round((prev.water - 0.8) * 10) / 10);
+        const now = Date.now();
+        const isZeroDecay = (prev.zeroDecayUntil || 0) > now;
+        const isSatiated = (prev.satietyExpiresAt || 0) > now;
+
+        let foodDecay = 0;
+        let waterDecay = 0;
+
+        if (isZeroDecay) {
+          // Giai đoạn buff giữ 0% hao hụt (món cấp trung / cao)
+          foodDecay = 0;
+          waterDecay = 0;
+        } else if (isSatiated) {
+          // Tiêu hao theo tốc độ thực tế của món ăn đã nạp
+          const naturalRate = 100 / 2700; // ~0.037%/s (100% trong 45 phút)
+          let foodRate = prev.satietyFoodRate || naturalRate;
+          let waterRate = prev.satietyWaterRate || naturalRate;
+
+          // Fallback an toàn nếu dữ liệu lưu chưa có rate cụ thể
+          if (!prev.satietyFoodRate) {
+            if (prev.satietyFoodTier === 'high') {
+              foodRate = 0.005; // ~0.3%/phút
+              waterRate = 0.004;
+            } else if (prev.satietyFoodTier === 'mid') {
+              foodRate = 0.02; // ~1.2%/phút
+              waterRate = 0.015;
+            } else {
+              foodRate = 0.045; // ~2.7%/phút
+              waterRate = 0.04;
+            }
+          }
+
+          if (prev.satietyDecayReduction && prev.satietyDecayReduction < 1) {
+            foodRate *= prev.satietyDecayReduction;
+            waterRate *= prev.satietyDecayReduction;
+          }
+
+          // Chu kỳ tick 5 giây
+          foodDecay = foodRate * 5;
+          waterDecay = waterRate * 5;
+        } else {
+          // Tự nhiên khi không có thức ăn duy trì: tiêu hao 100% trong 45 phút (2700 giây)
+          const naturalRatePerSec = 100 / 2700;
+          foodDecay = naturalRatePerSec * 5;
+          waterDecay = naturalRatePerSec * 5;
+        }
+
+        let newFood = Math.max(0, Math.round((prev.food - foodDecay) * 100) / 100);
+        let newWater = Math.max(0, Math.round((prev.water - waterDecay) * 100) / 100);
         let activePlan = prev.activeMealPlan ? { ...prev.activeMealPlan } : null;
 
         // Tự động cho ăn nếu có gói kế hoạch dinh dưỡng và mèo đang đói hoặc khát (< 25%)
@@ -225,7 +383,7 @@ export function useGameState() {
           activeMealPlan: activePlan,
         };
       });
-    }, 3500);
+    }, 5000); // 5 giây mỗi chu kỳ để thanh trạng thái mượt mà, trực quan
 
     return () => clearInterval(petTimer);
   }, []);
@@ -277,8 +435,9 @@ export function useGameState() {
   // Handle Cat Click / Tap (Hardcore Balance: Đói hoặc Khát < 15% sẽ không nhận được xu!)
   const handleClick = useCallback(
     (clientX?: number, clientY?: number) => {
-      const isExhausted = data.food < 15 || data.water < 15;
-      const hungerFactor = data.food >= 60 && data.water >= 60 ? 1.0 : 0.6;
+      const isSatiated = (data.satietyExpiresAt || 0) > Date.now();
+      const isExhausted = !isSatiated && (data.food < 15 || data.water < 15);
+      const hungerFactor = (isSatiated || (data.food >= 60 && data.water >= 60)) ? 1.0 : 0.6;
       const isCrit = !isExhausted && Math.random() < (0.06 + (isFrenzy ? 0.14 : 0));
       const critMultiplier = isCrit ? 1.6 : 1.0;
 
@@ -317,11 +476,13 @@ export function useGameState() {
         setComboCount(0);
       }
 
-      // 5. Update coins & physical energy (Tiêu hao thể lực nhanh hơn khi click)
+      // 5. Update coins & physical energy (Khi có hiệu ứng No Lâu: 0% hao hụt! Khi bình thường: chỉ 0.005% mỗi click)
       setData((prev) => {
         const newFish = prev.fish + earned;
         const newTotal = prev.totalFish + earned;
         const newHighest = Math.max(prev.highestFish, newFish);
+        const isSatiated = (prev.satietyExpiresAt || 0) > Date.now();
+        const clickDrain = isSatiated ? 0 : 0.005;
         return {
           ...prev,
           fish: newFish,
@@ -330,8 +491,8 @@ export function useGameState() {
           totalCoinsEarned: (prev.totalCoinsEarned || 0) + earned,
           highestFish: newHighest,
           totalClicks: prev.totalClicks + 1,
-          food: Math.max(0, Math.round((prev.food - 0.16) * 10) / 10),
-          water: Math.max(0, Math.round((prev.water - 0.14) * 10) / 10),
+          food: Math.max(0, Math.round((prev.food - clickDrain) * 1000) / 1000),
+          water: Math.max(0, Math.round((prev.water - clickDrain) * 1000) / 1000),
         };
       });
 
@@ -366,7 +527,79 @@ export function useGameState() {
         }
       }
     },
-    [baseClickPower, comboCount, comboUpgradeLevel, data.settings, data.food, data.water, isFrenzy, comboMultiplier]
+    [baseClickPower, comboCount, comboUpgradeLevel, data.settings, data.food, data.water, data.satietyExpiresAt, isFrenzy, comboMultiplier]
+  );
+
+  // Chơi đùa với đồ chơi trong phòng: có tỉ lệ nhận xu (mỗi loại đồ chơi có tỉ lệ khác nhau)
+  const playWithToy = useCallback(
+    (
+      toyId: string,
+      clientX?: number,
+      clientY?: number
+    ): { gainedCoins: number; success: boolean; ratePercent: number; toyName: string } => {
+      const toy = getFashionItemById(toyId);
+      const toyName = toy?.name || 'Đồ chơi';
+      const config = getToyRewardConfig(toy);
+
+      const roll = Math.random();
+      const isSuccess = roll < config.rate;
+      let gained = 0;
+
+      if (isSuccess) {
+        gained = config.maxCoins > 1 && Math.random() < 0.25 ? config.maxCoins : config.coinAmount;
+        soundManager.playCatchFish();
+        if (data.settings.hapticsEnabled) {
+          soundManager.triggerHaptic(25);
+        }
+        setData((prev) => {
+          const newCoins = prev.fish + gained;
+          return {
+            ...prev,
+            fish: newCoins,
+            coins: newCoins,
+            totalFish: prev.totalFish + gained,
+            totalCoinsEarned: (prev.totalCoinsEarned || 0) + gained,
+          };
+        });
+
+        if (clientX !== undefined && clientY !== undefined) {
+          const floatId = `float_toy_${Date.now()}_${Math.random()}`;
+          setFloatingItems((prev) => [
+            ...prev.slice(-15),
+            {
+              id: floatId,
+              x: clientX,
+              y: clientY,
+              text: `+${gained} 🪙`,
+              isCrit: gained > 1,
+              fishImage: toy?.image || '',
+              fishName: `Chơi ${toyName}`,
+              rarityColor: '#F59E0B',
+            },
+          ]);
+        }
+      } else {
+        soundManager.playPop(1.35);
+        if (data.settings.hapticsEnabled) {
+          soundManager.triggerHaptic(10);
+        }
+      }
+
+      // Biểu cảm vui tươi của mèo khi vờn đồ chơi
+      setIsCatActive(true);
+      if (catActiveTimerRef.current) clearTimeout(catActiveTimerRef.current);
+      catActiveTimerRef.current = setTimeout(() => {
+        setIsCatActive(false);
+      }, 180);
+
+      return {
+        gainedCoins: gained,
+        success: isSuccess,
+        ratePercent: config.ratePercent,
+        toyName,
+      };
+    },
+    [data.settings.hapticsEnabled]
   );
 
   // Feed Cat directly
@@ -374,6 +607,10 @@ export function useGameState() {
     setData((prev) => {
       if (prev.food >= 100) return prev;
       soundManager.playEat();
+      const currentSkinObj = SKINS.find((s) => s.id === prev.equippedSkin) || SKINS[0];
+      setTimeout(() => {
+        soundManager.playCatMeow(currentSkinObj.sound);
+      }, 180);
       if (data.settings.hapticsEnabled) soundManager.triggerHaptic(20);
       return {
         ...prev,
@@ -521,12 +758,16 @@ export function useGameState() {
       restoredFood: number;
       restoredWater: number;
       gainedXp: number;
+      satietyMinutesAdded?: number;
+      satietyDecayReduction?: number;
     } => {
       let result = {
         success: false,
         restoredFood: 0,
         restoredWater: 0,
         gainedXp: 0,
+        satietyMinutesAdded: 0,
+        satietyDecayReduction: 1.0,
       };
 
       const qty = Math.max(1, Math.floor(quantity));
@@ -539,6 +780,10 @@ export function useGameState() {
         }
 
         soundManager.playEat();
+        const currentSkinObj = SKINS.find((s) => s.id === prev.equippedSkin) || SKINS[0];
+        setTimeout(() => {
+          soundManager.playCatMeow(currentSkinObj.sound);
+        }, 180);
         if (data.settings.hapticsEnabled) soundManager.triggerHaptic(35);
 
         // Thưởng XP dinh dưỡng chuẩn từ món ăn (không nhân hệ số richness để chống lạm phát)
@@ -565,11 +810,66 @@ export function useGameState() {
           delete newInventory[foodItem.id];
         }
 
+        // Tính toán hiệu ứng No Lâu (Satiety): cộng dồn thời gian (tối đa 24 giờ)
+        const itemSatietyMins = foodItem.satietyMinutes || 8;
+        const itemReduction = foodItem.satietyDecayReduction ?? 1.0;
+        const addedDurationMs = itemSatietyMins * 60 * 1000 * qty;
+
+        const now = Date.now();
+        const currentExpiry = Math.max(now, prev.satietyExpiresAt || 0);
+        const newExpiry = Math.min(now + 24 * 3600 * 1000, currentExpiry + addedDurationMs);
+        const currentTotalMs = (prev.satietyExpiresAt && prev.satietyExpiresAt > now)
+          ? (prev.satietyTotalDurationMs || (prev.satietyExpiresAt - now))
+          : 0;
+        const newTotalDurationMs = Math.min(24 * 3600 * 1000, currentTotalMs + addedDurationMs);
+
+        // Tính buff 0% hao hụt (zeroDecayMinutes cho cấp trung và cấp cao)
+        let newZeroDecayUntil = (prev.zeroDecayUntil && prev.zeroDecayUntil > now) ? prev.zeroDecayUntil : 0;
+        if (foodItem.zeroDecayMinutes && foodItem.zeroDecayMinutes > 0) {
+          const addedZeroMs = foodItem.zeroDecayMinutes * 60 * 1000 * qty;
+          const currentZero = Math.max(now, prev.zeroDecayUntil || 0);
+          newZeroDecayUntil = Math.min(now + 3 * 3600 * 1000, currentZero + addedZeroMs);
+        }
+
+        // Lấy tỷ lệ giảm tốt nhất (giá trị nhỏ hơn là giảm nhiều hơn)
+        const prevReduction = (prev.satietyExpiresAt && prev.satietyExpiresAt > now)
+          ? (prev.satietyDecayReduction ?? 1)
+          : 1;
+        const bestReduction = Math.min(prevReduction, itemReduction);
+
+        // TÍNH TỐC ĐỘ TIÊU HAO CHUẨN XÁC THEO THÔNG SỐ CỦA MÓN ĂN:
+        const itemZeroMins = foodItem.zeroDecayMinutes || 0;
+        const activeMins = Math.max(1, itemSatietyMins - itemZeroMins);
+        const activeSec = activeMins * 60;
+        const naturalRate = 100 / 2700; // Tiêu hao tự nhiên nhẹ nhàng (~0.037%/s = 100% trong 45p)
+
+        // Tốc độ tiêu hao thức ăn (%/giây):
+        // Nếu món ăn nạp thức ăn (foodRestore > 0): chia đều cho thời gian của món ăn
+        let newFoodRate = prev.satietyFoodRate || naturalRate;
+        if (foodItem.foodRestore > 0) {
+          const targetRate = (foodItem.foodRestore / activeSec) * bestReduction;
+          newFoodRate = (prev.satietyExpiresAt && prev.satietyExpiresAt > now && prev.satietyFoodRate)
+            ? Math.min(prev.satietyFoodRate, targetRate)
+            : targetRate;
+        }
+
+        // Tốc độ tiêu hao nước (%/giây):
+        // Nếu món ăn nạp nước (waterRestore > 0): chia đều cho thời gian của món ăn
+        let newWaterRate = prev.satietyWaterRate || naturalRate;
+        if (foodItem.waterRestore > 0) {
+          const targetRate = (foodItem.waterRestore / activeSec) * bestReduction;
+          newWaterRate = (prev.satietyExpiresAt && prev.satietyExpiresAt > now && prev.satietyWaterRate)
+            ? Math.min(prev.satietyWaterRate, targetRate)
+            : targetRate;
+        }
+
         result = {
           success: true,
           restoredFood: newFood - prev.food,
           restoredWater: newWater - prev.water,
           gainedXp: totalXp,
+          satietyMinutesAdded: itemSatietyMins * qty,
+          satietyDecayReduction: bestReduction,
         };
 
         return {
@@ -579,6 +879,14 @@ export function useGameState() {
           xp: newXp,
           level: nextLevel,
           foodInventory: newInventory,
+          satietyExpiresAt: newExpiry,
+          satietyTotalDurationMs: newTotalDurationMs,
+          zeroDecayUntil: newZeroDecayUntil,
+          satietyDecayReduction: bestReduction,
+          satietyFoodRate: newFoodRate,
+          satietyWaterRate: newWaterRate,
+          satietyFoodName: foodItem.name,
+          satietyFoodTier: foodItem.tier,
         };
       });
 
@@ -617,6 +925,10 @@ export function useGameState() {
       }
       success = true;
       soundManager.playEat();
+      const currentSkinObj = SKINS.find((s) => s.id === prev.equippedSkin) || SKINS[0];
+      setTimeout(() => {
+        soundManager.playCatMeow(currentSkinObj.sound);
+      }, 180);
       soundManager.playUpgrade();
       if (data.settings.hapticsEnabled) soundManager.triggerHaptic(40);
 
@@ -638,6 +950,9 @@ export function useGameState() {
         activatedAt: Date.now(),
       };
 
+      const planHours = plan.id === 'plan_royal_7d' ? 168 : plan.id === 'plan_growth_3d' ? 72 : 24;
+      const planSatietyMs = planHours * 3600 * 1000;
+
       return {
         ...prev,
         fish: newCoins,
@@ -647,6 +962,13 @@ export function useGameState() {
         xp: newXp,
         level: nextLevel,
         activeMealPlan: activePlanInfo,
+        satietyExpiresAt: Math.max(prev.satietyExpiresAt || 0, Date.now() + planSatietyMs),
+        satietyTotalDurationMs: Math.max(prev.satietyTotalDurationMs || 0, planSatietyMs),
+        satietyDecayReduction: 0.35,
+        satietyFoodRate: 0.008,
+        satietyWaterRate: 0.008,
+        satietyFoodName: plan.name,
+        satietyFoodTier: 'high',
       };
     });
     return success;
@@ -680,14 +1002,14 @@ export function useGameState() {
         if (currentUnlocked.includes(rod.id)) {
           const isBroken = prev.equippedRodId === rod.id && (prev.rodDurability ?? 10) <= 0;
           if (isBroken) {
-            const repairCost = Math.max(30, Math.floor(rod.price * 0.35));
+            const repairCost = rod.repairPrice ?? rod.repairCost ?? getRodRepairCost(rod);
             if (repairCost > 0 && prev.fish < repairCost) {
               res = { success: false, message: `Không đủ xu để sửa cần (${formatNumber(repairCost)} xu)!` };
               return prev;
             }
             soundManager.playUpgrade();
             const newCoins = prev.fish - repairCost;
-            res = { success: true, message: `Đã sửa ${rod.name} (${rod.maxDurability}/${rod.maxDurability} lượt)!` };
+            res = { success: true, message: `Đã sửa ${rod.name} (${rod.maxDurability}/${rod.maxDurability} lượt) với giá ${formatNumber(repairCost)} xu!` };
             return {
               ...prev,
               fish: newCoins,
@@ -846,20 +1168,43 @@ export function useGameState() {
           };
           res = { success: true, message: `Đã mua và mặc ${item.name}! ` };
         } else {
-          // bowls, balls, rugs
-          const owned = prev.ownedRoomDecor || ['bowl_clay', 'ball_yarn_red', 'rug_peach'];
+          // bowls, balls, rugs, rooms
+          const owned = prev.ownedRoomDecor || ['bowl_clay', 'ball_yarn_red', 'rug_peach', 'room_go_co_dien'];
           const newOwned = owned.includes(item.id) ? owned : [...owned, item.id];
-          const prevDecor = prev.equippedDecor || { bowl: 'bowl_clay', ball: 'ball_yarn_red', rug: 'rug_peach' };
-          const slotKey = item.category === 'bowls' ? 'bowl' : item.category === 'balls' ? 'ball' : 'rug';
+          const prevDecor = prev.equippedDecor || { bowl: 'bowl_clay', ball: 'ball_yarn_red', balls: ['ball_yarn_red'], rug: 'rug_peach', room: 'room_go_co_dien' };
+          
+          let newEquippedDecor = { ...prevDecor };
+          if (item.category === 'balls') {
+            let currentBalls = Array.isArray(prevDecor.balls) && prevDecor.balls.length > 0
+              ? [...prevDecor.balls]
+              : [prevDecor.ball || 'ball_yarn_red'];
+            if (!currentBalls.includes(item.id)) {
+              if (currentBalls.length < 3) {
+                currentBalls.push(item.id);
+              } else {
+                currentBalls = [...currentBalls.slice(1), item.id];
+              }
+            }
+            newEquippedDecor.ball = currentBalls[0] || item.id;
+            newEquippedDecor.balls = currentBalls;
+          } else {
+            const slotKey = item.category === 'bowls' ? 'bowl' : item.category === 'rooms' ? 'room' : 'rug';
+            newEquippedDecor[slotKey] = item.id;
+          }
+
           updatedPrev = {
             ...updatedPrev,
             ownedRoomDecor: newOwned,
-            equippedDecor: {
-              ...prevDecor,
-              [slotKey]: item.id,
-            },
+            equippedDecor: newEquippedDecor,
           };
-          res = { success: true, message: `Đã mua và đặt ${item.name} tại sảnh phòng! 🛋️` };
+          res = {
+            success: true,
+            message: item.category === 'rooms'
+              ? `Đã mở khóa và chuyển sang ${item.name}! 🏡`
+              : item.category === 'balls'
+              ? `Đã mua và gắn đồ chơi ${item.name} lên phòng mèo (tối đa 3 món)! 🧸`
+              : `Đã mua và đặt ${item.name} tại sảnh phòng! 🛋️`,
+          };
         }
 
         return updatedPrev;
@@ -870,7 +1215,7 @@ export function useGameState() {
     [data.settings.hapticsEnabled]
   );
 
-  // Trang bị / Đổi Mũ, Áo hoặc Đồ Trang Trí Phòng (Máng ăn, Quả banh, Thảm)
+  // Trang bị / Đổi Mũ, Áo hoặc Đồ Trang Trí Phòng (Máng ăn, 3 Đồ chơi, Thảm, Phòng Nền)
   const equipFashionDecorItem = useCallback((item: FashionDecorItem): boolean => {
     setData((prev) => {
       soundManager.playUpgrade();
@@ -881,9 +1226,36 @@ export function useGameState() {
       } else if (item.category === 'clothes') {
         const nextEquipped = prev.equippedClothes === item.id ? '' : item.id;
         updatedPrev = { ...updatedPrev, equippedClothes: nextEquipped };
+      } else if (item.category === 'balls') {
+        const prevDecor = prev.equippedDecor || { bowl: 'bowl_clay', ball: 'ball_yarn_red', balls: ['ball_yarn_red'], rug: 'rug_peach', room: 'room_go_co_dien' };
+        let currentBalls = Array.isArray(prevDecor.balls) && prevDecor.balls.length > 0
+          ? [...prevDecor.balls]
+          : [prevDecor.ball || 'ball_yarn_red'];
+        
+        if (currentBalls.includes(item.id)) {
+          // Tháo đồ chơi ra nếu đã có từ 2 món trở lên
+          if (currentBalls.length > 1) {
+            currentBalls = currentBalls.filter((id) => id !== item.id);
+          }
+        } else {
+          // Thêm đồ chơi vào phòng mèo (tối đa 3 món)
+          if (currentBalls.length < 3) {
+            currentBalls.push(item.id);
+          } else {
+            currentBalls = [...currentBalls.slice(1), item.id];
+          }
+        }
+        updatedPrev = {
+          ...updatedPrev,
+          equippedDecor: {
+            ...prevDecor,
+            ball: currentBalls[0] || 'ball_yarn_red',
+            balls: currentBalls,
+          },
+        };
       } else {
-        const slotKey = item.category === 'bowls' ? 'bowl' : item.category === 'balls' ? 'ball' : 'rug';
-        const prevDecor = prev.equippedDecor || { bowl: 'bowl_clay', ball: 'ball_yarn_red', rug: 'rug_peach' };
+        const slotKey = item.category === 'bowls' ? 'bowl' : item.category === 'rooms' ? 'room' : 'rug';
+        const prevDecor = prev.equippedDecor || { bowl: 'bowl_clay', ball: 'ball_yarn_red', balls: ['ball_yarn_red'], rug: 'rug_peach', room: 'room_go_co_dien' };
         updatedPrev = {
           ...updatedPrev,
           equippedDecor: {
@@ -956,6 +1328,9 @@ export function useGameState() {
       if (prev.fish < skin.unlockCost) return prev;
 
       soundManager.playUnlock();
+      setTimeout(() => {
+        soundManager.playCatMeow(skin.sound);
+      }, 250);
       return {
         ...prev,
         fish: prev.fish - skin.unlockCost,
@@ -970,7 +1345,8 @@ export function useGameState() {
   const equipSkin = useCallback((skinId: string) => {
     setData((prev) => {
       if (!prev.unlockedSkins.includes(skinId)) return prev;
-      soundManager.playMeow();
+      const targetSkin = SKINS.find((s) => s.id === skinId);
+      soundManager.playCatMeow(targetSkin?.sound);
       return {
         ...prev,
         equippedSkin: skinId,
@@ -978,10 +1354,39 @@ export function useGameState() {
     });
   }, []);
 
-  // Catch Golden Fish Event
+  // Catch Golden Fish Event: Nhận xu + 2 Cá Vàng vào Túi/Balo
   const catchGoldenFish = useCallback((bonusFish: number) => {
     soundManager.playGoldenFish();
+    const goldenSpecies = FISH_CATALOG.find((f) => f.id === 'ca_chep_vang') || FISH_CATALOG[8];
+    // Random kích thước từ 0.2kg đến 0.9kg (luôn <= 1kg theo yêu cầu)
+    const weight1 = +(0.2 + Math.random() * 0.7).toFixed(1);
+    const weight2 = +(0.2 + Math.random() * 0.7).toFixed(1);
+
+    const fish1: CaughtFishItem = {
+      ...createCaughtFish(goldenSpecies),
+      instanceId: `golden_${Date.now()}_1`,
+      name: 'Cá Vàng May Mắn',
+      weightKg: weight1,
+      difficultyLabel: 'May Mắn (Nhỏ)',
+      rarity: 'legendary',
+      rarityLabel: 'May Mắn ✨',
+      rarityColor: '#F59E0B',
+      sellPrice: Math.max(120, Math.round(weight1 * 250 + 100)),
+    };
+    const fish2: CaughtFishItem = {
+      ...createCaughtFish(goldenSpecies),
+      instanceId: `golden_${Date.now()}_2`,
+      name: 'Cá Vàng May Mắn',
+      weightKg: weight2,
+      difficultyLabel: 'May Mắn (Nhỏ)',
+      rarity: 'legendary',
+      rarityLabel: 'May Mắn ✨',
+      rarityColor: '#F59E0B',
+      sellPrice: Math.max(120, Math.round(weight2 * 250 + 100)),
+    };
+
     setData((prev) => {
+      const currentBasket = Array.isArray(prev.fishBasket) ? prev.fishBasket : [];
       const newFish = prev.fish + bonusFish;
       const newTotal = prev.totalFish + bonusFish;
       const newHighest = Math.max(prev.highestFish, newFish);
@@ -990,6 +1395,7 @@ export function useGameState() {
         fish: newFish,
         totalFish: newTotal,
         highestFish: newHighest,
+        fishBasket: [fish1, fish2, ...currentBasket],
       };
     });
     // Boost combo to frenzy immediately!
@@ -1032,6 +1438,42 @@ export function useGameState() {
     setSparkles((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
+  // Update User Profile Cat Avatar
+  const updateUserAvatar = useCallback(async (photoURL: string) => {
+    await authService.updateUserAvatar(photoURL);
+    setData((prev) => ({
+      ...prev,
+      catAvatar: photoURL,
+      lastSaved: Date.now(),
+    }));
+    setCurrentUser((prev) => (prev ? { ...prev, photoURL } : {
+      uid: 'guest_local',
+      email: null,
+      displayName: 'Mèo Cưng',
+      catName: 'Mèo Cưng',
+      username: '',
+      isAnonymous: true,
+      photoURL,
+    }));
+  }, []);
+
+  // Update Cat Name (Đổi tên Mèo Cưng)
+  const updateCatName = useCallback(async (newName: string) => {
+    const updated = await authService.updateCatName(newName);
+    setData((prev) => {
+      const next = {
+        ...prev,
+        catName: updated,
+        lastSaved: Date.now(),
+      };
+      saveGame(next);
+      return next;
+    });
+    setCurrentUser((prev) => (prev ? { ...prev, displayName: updated, catName: updated } : null));
+    soundManager.playUnlock();
+    return updated;
+  }, []);
+
   // Reset Game Progress
   const resetGame = useCallback(() => {
     resetSavedGame();
@@ -1042,6 +1484,68 @@ export function useGameState() {
     setComboCount(0);
     soundManager.playPop();
   }, []);
+
+  // Đăng xuất và reset toàn bộ dữ liệu game về ban đầu (Level 1, 0 xu, 0 xp)
+  const logoutGame = useCallback(async () => {
+    const activeUser = currentUser || authService.getCurrentUser();
+
+    // 1. Tự động lưu toàn bộ dữ liệu hiện tại lên Cloud TRƯỚC KHI đăng xuất
+    if (activeUser && !activeUser.isAnonymous && auth.currentUser) {
+      try {
+        const latestData = dataRef.current;
+        const lvl = calculateLevelFromTotalXp(latestData.xp || 0);
+        const stg = getCatGrowthStage(lvl.level);
+        const userCatName = (latestData.catName && latestData.catName !== 'Mèo Cưng')
+          ? latestData.catName
+          : (activeUser.displayName || latestData.catName || 'Mèo Cưng');
+
+        const fullData: GameSaveData = {
+          ...latestData,
+          level: lvl.level,
+          catName: userCatName,
+          displayName: userCatName,
+          username: activeUser.username || latestData.username || '',
+          lastSaved: Date.now(),
+        };
+
+        await cloudSaveService.saveToCloud(activeUser.uid, fullData);
+        await leaderboardService.updateMyEntry({
+          uid: activeUser.uid,
+          displayName: userCatName,
+          catName: userCatName,
+          username: activeUser.username || '',
+          photoURL: activeUser.photoURL || fullData.catAvatar || '/images/cat_avatars_webp/avatar_01.webp',
+          level: lvl.level,
+          xp: fullData.xp || 0,
+          rankTierKey: lvl.rankTier.key,
+          rankTierName: lvl.rankTier.name,
+          rankBadge: lvl.rankTier.badge,
+          coins: fullData.fish || 0,
+          biggestFishKg: fullData.biggestFishKg || 0,
+          equippedSkin: fullData.equippedSkin || 'orange_tabby',
+          catStageLabel: stg.label,
+          updatedAt: Date.now(),
+        });
+      } catch (err) {
+        console.warn('Lỗi lưu cloud trước khi đăng xuất:', err);
+      }
+    }
+
+    // 2. Sau khi lưu thành công lên Cloud, mới gọi đăng xuất Firebase Auth & xoá phiên đăng nhập
+    await authService.logout();
+
+    // 3. Reset toàn bộ dữ liệu game về ban đầu (Level 1, 0 xu, 0 xp, mèo ban đầu)
+    resetSavedGame();
+    setData({
+      ...DEFAULT_SAVE_DATA,
+      lastSaved: Date.now(),
+    });
+    setComboCount(0);
+    setFloatingItems([]);
+    setSparkles([]);
+    setCurrentUser(null);
+    soundManager.playPop();
+  }, [currentUser]);
 
   // Import Save
   const importSave = useCallback((code: string): boolean => {
@@ -1090,9 +1594,26 @@ export function useGameState() {
     equippedHat: data.equippedHat || '',
     ownedClothes: data.ownedClothes || [],
     equippedClothes: data.equippedClothes || '',
-    ownedRoomDecor: data.ownedRoomDecor || ['bowl_clay', 'ball_yarn_red', 'rug_peach'],
-    equippedDecor: data.equippedDecor || { bowl: 'bowl_clay', ball: 'ball_yarn_red', rug: 'rug_peach' },
+    ownedRoomDecor: data.ownedRoomDecor || [],
     lastWaterGiftClaimedAt: data.lastWaterGiftClaimedAt || 0,
+    equippedDecor: {
+      bowl: 'bowl_clay',
+      ball: 'ball_yarn_red',
+      rug: 'rug_peach',
+      room: 'room_go_co_dien',
+      ...(data.equippedDecor || {}),
+      balls: Array.isArray(data.equippedDecor?.balls) && data.equippedDecor.balls.length > 0
+        ? data.equippedDecor.balls.slice(0, 3)
+        : [data.equippedDecor?.ball || 'ball_yarn_red'],
+    },
+    satietyExpiresAt: data.satietyExpiresAt || 0,
+    satietyTotalDurationMs: data.satietyTotalDurationMs || 0,
+    zeroDecayUntil: data.zeroDecayUntil || 0,
+    satietyDecayReduction: data.satietyDecayReduction ?? 1.0,
+    satietyFoodName: data.satietyFoodName || '',
+    satietyFoodTier: data.satietyFoodTier || 'low',
+    satietyFoodRate: data.satietyFoodRate || (100 / 2700),
+    satietyWaterRate: data.satietyWaterRate || (100 / 2700),
     claimFreeWaterGift,
     buyFashionDecorItem,
     equipFashionDecorItem,
@@ -1109,6 +1630,7 @@ export function useGameState() {
     buyMealPlan,
     giveWater,
     handleClick,
+    playWithToy,
     buyUpgrade,
     unlockSkin,
     equipSkin,
@@ -1119,9 +1641,13 @@ export function useGameState() {
     removeFloatingItem,
     removeSparkle,
     resetGame,
+    logoutGame,
     importSave,
     exportSave,
     syncToCloud,
+    updateUserAvatar,
+    updateCatName,
+    loadUserDataFromCloud,
   };
 };
 

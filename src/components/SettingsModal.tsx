@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { GameSaveData } from '../utils/saveGame';
+import { authService, type UserProfileInfo } from '../services/authService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -11,6 +12,10 @@ interface SettingsModalProps {
   onResetGame: () => void;
   onExportSave: () => string;
   onImportSave: (code: string) => boolean;
+  currentUser?: UserProfileInfo | null;
+  onLogout?: () => void;
+  onOpenAuth?: () => void;
+  onUpdateCatName?: (newName: string) => Promise<string>;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -18,16 +23,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   settings,
   onUpdateSettings,
-  onSaveNow,
-  saveStatus,
+  onSaveNow: _onSaveNow,
+  saveStatus: _saveStatus,
   onResetGame,
   onExportSave,
   onImportSave,
+  currentUser,
+  onLogout,
+  onOpenAuth,
+  onUpdateCatName,
 }) => {
   const [importCode, setImportCode] = useState('');
   const [exportCode, setExportCode] = useState('');
   const [confirmReset, setConfirmReset] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [newCatName, setNewCatName] = useState(currentUser?.displayName || '');
+  const [isRenaming, setIsRenaming] = useState(false);
 
   const [swingSpeed, setSwingSpeed] = useState<number>(() => {
     try {
@@ -98,6 +109,116 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         )}
 
         <div className="settings-body">
+          {/* Section 0: Tài khoản & Đổi tên */}
+          <section className="settings-section">
+            <h3 className="section-label">👤 Tài Khoản Người Chơi</h3>
+            {currentUser && !currentUser.isAnonymous ? (
+              <div className="flex flex-col gap-2 p-3 bg-amber-50/90 rounded-xl border border-amber-200/90">
+                <div className="flex items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-white border-2 border-amber-400 overflow-hidden shrink-0 shadow-xs flex items-center justify-center">
+                      {currentUser.photoURL ? (
+                        <img src={currentUser.photoURL} alt={currentUser.displayName} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-xl">🐱</span>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-xs sm:text-sm text-slate-800 truncate">{currentUser.displayName}</span>
+                        <span className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.2 rounded-full font-bold">Cloud</span>
+                      </div>
+                      <span className="text-[11px] text-slate-500 truncate block">
+                        @{currentUser.username || currentUser.email?.replace('@purrfish.com', '')}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="px-2.5 py-1.5 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white text-xs font-bold rounded-lg transition-all shadow-xs shrink-0 cursor-pointer"
+                    onClick={async () => {
+                      if (onLogout) {
+                        await onLogout();
+                      } else {
+                        await authService.logout();
+                      }
+                      showFeedback('Đã đăng xuất tài khoản!', 'success');
+                      setTimeout(() => {
+                        onClose();
+                        if (onOpenAuth) onOpenAuth();
+                      }, 500);
+                    }}
+                    title="Đăng xuất khỏi tài khoản này"
+                  >
+                    🚪 Đăng Xuất
+                  </button>
+                </div>
+
+                {/* Chức năng Đổi Tên Mèo Cưng trong Cài Đặt (Khi Đã Đăng Nhập) */}
+                <div className="pt-2.5 border-t border-amber-200/80 mt-1">
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                    ✏️ Đổi Tên Mèo Cưng:
+                  </label>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      className="flex-1 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      placeholder="Nhập tên mới cho mèo cưng..."
+                      value={newCatName}
+                      onChange={(e) => setNewCatName(e.target.value)}
+                      maxLength={30}
+                    />
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold text-xs rounded-lg cursor-pointer transition-all disabled:opacity-50 shadow-xs shrink-0"
+                      disabled={isRenaming || !newCatName.trim() || newCatName.trim() === currentUser.displayName}
+                      onClick={async () => {
+                        if (!newCatName.trim() || !onUpdateCatName) return;
+                        setIsRenaming(true);
+                        try {
+                          const updated = await onUpdateCatName(newCatName.trim());
+                          showFeedback(`✨ Đã đổi tên Mèo Cưng thành "${updated}"!`, 'success');
+                        } catch (err: any) {
+                          showFeedback(err?.message || 'Lỗi khi đổi tên mèo!', 'error');
+                        } finally {
+                          setIsRenaming(false);
+                        }
+                      }}
+                    >
+                      {isRenaming ? 'Đang lưu...' : 'Lưu Tên'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Trạng thái khách chơi thử: Rõ ràng, chỉ cho chơi thử và nhắc đăng nhập để đua hạng */
+              <div className="p-3 bg-amber-50/90 rounded-xl border border-amber-300 text-left">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-2xl shrink-0">🐾</span>
+                  <div className="min-w-0">
+                    <span className="font-black text-xs text-amber-950 block">
+                      Chế Độ Chơi Thử (Khách Vãng Lai)
+                    </span>
+                    <span className="text-[11px] text-amber-800 block leading-tight">
+                      Tiến trình tạm thời trên máy. Tạo tài khoản để lưu vĩnh viễn, đổi avatar và đua top!
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="w-full mt-2 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-black text-xs rounded-lg shadow-xs active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  onClick={() => {
+                    onClose();
+                    if (onOpenAuth) onOpenAuth();
+                  }}
+                >
+                  ✨ Tạo Tài Khoản / Đăng Nhập
+                </button>
+              </div>
+            )}
+          </section>
+
           {/* Section 1: Âm thanh */}
           <section className="settings-section">
             <h3 className="section-label">🔊 Âm Thanh</h3>
@@ -236,12 +357,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <section className="settings-section">
             <h3 className="section-label">💾 Dữ Liệu & Sao Lưu</h3>
             
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200/90 rounded-xl mb-2 flex items-center gap-2 text-xs text-emerald-900 font-semibold">
+              <span className="text-base">🟢</span>
+              <div className="text-left">
+                <p className="font-bold">Tự Động Lưu Liên Tục</p>
+                <p className="text-[11px] text-emerald-700">Mọi tiến trình xu, cấp độ và đồ đạc đều tự động lưu lên máy chủ.</p>
+              </div>
+            </div>
+
             <div className="save-actions-grid">
-              <button type="button" className="action-btn save-btn" onClick={onSaveNow}>
-                💾 {saveStatus === 'saved' ? 'Đã Lưu!' : 'Lưu Máy'}
-              </button>
-              <button type="button" className="action-btn export-btn" onClick={handleExport}>
-                📋 Xuất Mã
+              <button type="button" className="action-btn export-btn w-full" onClick={handleExport}>
+                📋 Xuất Mã Sao Lưu
               </button>
             </div>
 

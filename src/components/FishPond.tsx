@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FISH_CATALOG, type FishSpecies, type CaughtFishItem } from '../data/fishes';
 import type { CatSkin } from '../data/skins';
-import { getRodById, FISHING_RODS_CATALOG, type FishingRod } from '../data/fishingRods';
+import { getRodById, FISHING_RODS_CATALOG, type FishingRod, getRodRepairCost } from '../data/fishingRods';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
 
@@ -30,11 +30,14 @@ interface FishPondProps {
   equippedRodId?: string;
   rodDurability?: number;
   unlockedRods?: string[];
+  catFood?: number;
+  satietyExpiresAt?: number;
   onCatchFish: (species: FishSpecies) => CaughtFishItem;
   onBuyRod?: (rodId: string) => { success: boolean; message: string };
   onUseRodDurability?: () => number;
   onOpenBasket?: () => void;
   onClose: () => void;
+  onGoToFeed?: () => void;
 }
 
 type GamePhase = 'SWINGING' | 'CASTING' | 'REELING' | 'RETRACTING';
@@ -45,6 +48,18 @@ let globalFishCounter = 0;
 function generateFishId(prefix = 'fish'): string {
   globalFishCounter += 1;
   return `${prefix}_${Date.now()}_${globalFishCounter}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/**
+ * Phân loại chính xác 3 Tier câu cá:
+ * - Tier 1: Cá Nhỏ (diff <= 1 hoặc < 1.5kg): 5 nhát kéo theo nhịp
+ * - Tier 2: Cá Vừa (diff 2-3 và < 7kg): Thanh lực giằng co 0-100%
+ * - Tier 3: Cá Lớn / Khủng (diff >= 4 hoặc >= 7kg): Lái kim đỏ vào vùng xanh, cân bằng 100% Xanh/Đỏ
+ */
+export function getFishTier(species: FishSpecies): 1 | 2 | 3 {
+  if (species.difficultyLevel <= 1 || species.baseWeightKg < 1.5) return 1;
+  if (species.difficultyLevel <= 3 && species.baseWeightKg < 7.0) return 2;
+  return 3;
 }
 
 /**
@@ -95,18 +110,27 @@ function rollFishForRod(rod: FishingRod, excludeIds: string[] = []): FishSpecies
   return poolToUse[Math.floor(Math.random() * poolToUse.length)] || FISH_CATALOG[0];
 }
 
-export const FishPond: React.FC<FishPondProps> = ({
+export const FishPond: React.FC<FishPondProps> = React.memo(({
   currentSkin,
   fish,
+  basketCount = 0,
   equippedRodId = 'wood_rod',
   rodDurability = 10,
   unlockedRods = ['wood_rod'],
+  catFood = 100,
+  satietyExpiresAt = 0,
   onCatchFish,
   onBuyRod,
   onUseRodDurability,
   onOpenBasket,
+  onGoToFeed,
 }) => {
   const pondRef = useRef<HTMLDivElement>(null);
+
+  // Trạng thái đói bụng: nếu đói < 15% và không có buff no lâu -> Mèo đói không thể câu cá
+  const isSatiated = (satietyExpiresAt || 0) > Date.now();
+  const isCatHungry = !isSatiated && (catFood ?? 100) < 15;
+  const [hungryAlert, setHungryAlert] = useState<string | null>(null);
 
   // Rod & Durability state
   const [activeRodId, setActiveRodId] = useState<string>(equippedRodId);
@@ -114,6 +138,15 @@ export const FishPond: React.FC<FishPondProps> = ({
   const [isRodShopOpen, setIsRodShopOpen] = useState<boolean>(false);
   const [rodModalTab, setRodModalTab] = useState<'owned' | 'shop'>('owned');
   const [brokenAlert, setBrokenAlert] = useState<string | null>(null);
+
+  // Khi vào hồ câu: nếu mèo đang đói thì hiển thị thông báo ngay lập tức
+  useEffect(() => {
+    if (isCatHungry) {
+      setHungryAlert('Mèo đang đói bụng! Boss không còn sức để câu cá. Hãy cho Boss ăn no nhé! 😿🍱');
+    } else {
+      setHungryAlert(null);
+    }
+  }, [isCatHungry]);
 
   const currentRod: FishingRod = getRodById(activeRodId);
 
@@ -151,10 +184,11 @@ export const FishPond: React.FC<FishPondProps> = ({
   const [pullTapsLeft, setPullTapsLeft] = useState<number>(4); // Tier 1: Easy (4 taps)
   const [reelProgress, setReelProgress] = useState<number>(25); // Tier 2: Medium (0 - 100)
   const [tension, setTension] = useState<number>(50); // Tier 3: Hard (0 - 100)
-  const [safeHoldProgress, setSafeHoldProgress] = useState<number>(0); // Tier 3: (0 - 100)
+  const [safeHoldProgress, setSafeHoldProgress] = useState<number>(50); // Tier 3: 50% Xanh (Thu phục) / 50% Đỏ (Phản kháng)
   const [reelingTimeRemaining, setReelingTimeRemaining] = useState<number>(5.0); // Seconds
   const [safeZoneBounds, setSafeZoneBounds] = useState<{ min: number; max: number }>({ min: 35, max: 70 });
   const [fishStruggle, setFishStruggle] = useState<FishStruggleState>('TIRED');
+  const [lineTensionMistakes, setLineTensionMistakes] = useState<number>(0); // 0 = An toàn, 1 = Cước căng, 2 = Sắp đứt, 3 = Đứt cước
 
   // Toast feedback banner
   const [catchToast, setCatchToast] = useState<{ text: string; sub: string } | null>(null);
@@ -182,6 +216,16 @@ export const FishPond: React.FC<FishPondProps> = ({
   // Trạng thái quẫy đạp của cá trong mini-game
   const fishStruggleRef = useRef<FishStruggleState>('TIRED');
   const struggleTimerRef = useRef<number>(1.5);
+  const needleMoveDirRef = useRef<number>(0); // -1: sang trái, 0: đứng yên, 1: sang phải
+  const lineTensionMistakesRef = useRef<number>(0);
+  const lastMistakeTimeRef = useRef<number>(0); // Chống spam lỗi do key-repeat hoặc pointer drag
+  const lastPullClickTimeRef = useRef<number>(0);
+  const safeHoldProgressRef = useRef<number>(50);
+  const reelingTimeRemainingRef = useRef<number>(15);
+  const pullTapsLeftRef = useRef<number>(5);
+  const reelProgressRef = useRef<number>(10);
+  const tensionRef = useRef<number>(50);
+  const isEndingMiniGameRef = useRef<boolean>(false);
 
   // Sync refs whenever state updates
   useEffect(() => {
@@ -226,10 +270,12 @@ export const FishPond: React.FC<FishPondProps> = ({
     }
   }, [gamePhase]);
 
-  // Dừng âm thanh kéo cá khi rời khỏi bể cá
+  // Kích hoạt nhạc nền hồ câu cá (fish-chill.mp3), và khôi phục nhạc nền phòng mèo (music-layout.mp3) khi rời hồ câu
   useEffect(() => {
+    soundManager.setBgmTrack('pond');
     return () => {
       soundManager.stopReelingSound();
+      soundManager.setBgmTrack('room');
     };
   }, []);
 
@@ -289,7 +335,7 @@ export const FishPond: React.FC<FishPondProps> = ({
   // Cần câu bị hỏng
   const handleRodBroken = useCallback(() => {
     soundManager.playPop(0.6);
-    setBrokenAlert('Cần câu đã hỏng! Hãy mua cần mới');
+    setBrokenAlert('Cần câu đã hỏng! Hãy sửa cần hoặc chọn cần khác');
     setGamePhase('SWINGING');
     setTimeout(() => {
       setIsRodShopOpen(true);
@@ -299,8 +345,10 @@ export const FishPond: React.FC<FishPondProps> = ({
   // Thu hoạch cá thành công
   const handleCatchSuccess = useCallback(() => {
     const caught = hookedFishRef.current;
-    if (!caught) return;
+    if (!caught || isEndingMiniGameRef.current) return;
+    isEndingMiniGameRef.current = true;
 
+    needleMoveDirRef.current = 0;
     soundManager.stopReelingSound();
     setHookedFish(null);
     hookedFishRef.current = null;
@@ -376,8 +424,10 @@ export const FishPond: React.FC<FishPondProps> = ({
   const handleFishEscape = useCallback(
     (reasonMsg?: string) => {
       const escaped = hookedFishRef.current;
-      if (!escaped) return;
+      if (!escaped || isEndingMiniGameRef.current) return;
+      isEndingMiniGameRef.current = true;
 
+      needleMoveDirRef.current = 0;
       soundManager.stopReelingSound();
       setHookedFish(null);
       hookedFishRef.current = null;
@@ -441,12 +491,43 @@ export const FishPond: React.FC<FishPondProps> = ({
     [onUseRodDurability]
   );
 
+  // Xử lý phạm lỗi khi thao tác trong lúc cá đang quẫy đỏ (RAGING)
+  const registerMistake = useCallback(
+    (reasonMsg?: string) => {
+      const now = Date.now();
+      // Debounce 350ms chống spam sự kiện liên tục (như kéo trượt thanh hoặc giữ phím)
+      if (now - lastMistakeTimeRef.current < 350) return;
+      lastMistakeTimeRef.current = now;
+
+      soundManager.playLineTension();
+      soundManager.playFishStruggleSplash();
+      soundManager.triggerHaptic(80);
+
+      const newMistakes = lineTensionMistakesRef.current + 1;
+      lineTensionMistakesRef.current = newMistakes;
+      setLineTensionMistakes(newMistakes);
+
+      // Phạt giật lùi tiến trình bên Xanh (-8%)
+      safeHoldProgressRef.current = Math.max(0, safeHoldProgressRef.current - 8);
+      setSafeHoldProgress(safeHoldProgressRef.current);
+
+      // Cho đúng 3 cơ hội nhấn sai khi cá đang quẫy: đến lần 3 mới đứt cước sẩy cá!
+      if (newMistakes >= 3) {
+        handleFishEscape(reasonMsg || 'Đứt cước! Bạn đã phạm lỗi 3 lần khi cá đang quẫy!');
+      }
+    },
+    [handleFishEscape]
+  );
+
   // UNINTERRUPTED 60 FPS PHYSICS SIMULATION LOOP
   useEffect(() => {
     let animId: number;
     let lastTime = performance.now();
+    let lastFishRenderTime = 0;
 
     const loop = (currentTime: number) => {
+      animId = requestAnimationFrame(loop);
+
       const deltaMs = Math.min(50, currentTime - lastTime);
       const dt = deltaMs / 16.67;
       lastTime = currentTime;
@@ -549,7 +630,8 @@ export const FishPond: React.FC<FishPondProps> = ({
         hasFishChanges = true;
       }
 
-      if (hasFishChanges) {
+      if (hasFishChanges && currentTime - lastFishRenderTime >= 30) {
+        lastFishRenderTime = currentTime;
         setSwimmingFish([...list]);
       }
 
@@ -595,23 +677,64 @@ export const FishPond: React.FC<FishPondProps> = ({
           soundManager.startReelingSound();
           soundManager.setReelingFishState(false);
 
-          // Reset struggle cycle
-          fishStruggleRef.current = 'TIRED';
-          setFishStruggle('TIRED');
-          struggleTimerRef.current = 1.6;
+          // Reset mistake counter, debounce timer, safe progress & ending flag
+          isEndingMiniGameRef.current = false;
+          lastMistakeTimeRef.current = 0;
+          lineTensionMistakesRef.current = 0;
+          setLineTensionMistakes(0);
 
-          // Setup difficulty tier (Hardcore Balance)
-          const diff = hitFish.species.difficultyLevel;
-          if (diff <= 1 || hitFish.species.baseWeightKg < 2.5) {
-            setPullTapsLeft(6); // 6 nhát giật (trước là 4)
-            setReelingTimeRemaining(2.8); // 2.8s giới hạn giật cá nhỏ!
-          } else if (diff <= 3 || hitFish.species.baseWeightKg < 9) {
-            setReelProgress(20);
-            setReelingTimeRemaining(3.6); // 3.6s (trước là 5.0s)
+          // Cân bằng thời gian đếm ngược & độ khó theo từng loài cá
+          const tier = getFishTier(hitFish.species);
+          const weight = hitFish.species.baseWeightKg || 1;
+
+          // CÁ LỚN (Tier 3): Chỉ tập trung điều khiển kim - không quẫy đuôi làm gián đoạn hay sẩy cá
+          if (tier === 3) {
+            fishStruggleRef.current = 'TIRED';
+            setFishStruggle('TIRED');
+            soundManager.setReelingFishState(false);
           } else {
+            // TỶ LỆ CÁ QUẪY CHO TIER 1 VÀ 2: 45% cá vừa cắn câu là giật mình quẫy dữ dội
+            const startRaging = Math.random() < 0.45;
+            if (startRaging) {
+              fishStruggleRef.current = 'RAGING';
+              setFishStruggle('RAGING');
+              soundManager.setReelingFishState(true);
+              struggleTimerRef.current = 1.8 + Math.random() * 0.5;
+              soundManager.playLineTension();
+              soundManager.playFishStruggleSplash();
+            } else {
+              fishStruggleRef.current = 'TIRED';
+              setFishStruggle('TIRED');
+              soundManager.setReelingFishState(false);
+              struggleTimerRef.current = 0.9 + Math.random() * 0.3;
+            }
+          }
+
+          if (tier === 1) {
+            // Tier 1: Cá Nhỏ (Cá Hề, Sọc Vằn, Ba Đuôi, Cá Ngựa) - 5 nhát kéo có nhịp điệu khi Xanh
+            pullTapsLeftRef.current = 5;
+            setPullTapsLeft(5);
+            const timerVal = Math.round((9.5 + weight * 1.5) * 10) / 10;
+            reelingTimeRemainingRef.current = timerVal;
+            setReelingTimeRemaining(timerVal);
+          } else if (tier === 2) {
+            // Tier 2: Cá Vừa (Cá Bướm, Rô Phi, Cá Nóc, Cá Chép Hồng) - Khởi đầu 10%
+            reelProgressRef.current = 10;
+            setReelProgress(10);
+            const timerVal = Math.round((13.0 + weight * 0.6) * 10) / 10;
+            reelingTimeRemainingRef.current = timerVal;
+            setReelingTimeRemaining(timerVal);
+          } else {
+            // Tier 3: Cá Lớn & Khủng (Chép Vàng, Cá Trê, Cá Vây Xanh, Cá Mập)
+            tensionRef.current = 50;
             setTension(50);
-            setSafeHoldProgress(0);
-            setReelingTimeRemaining(4.8); // 4.8s (trước là 6.5s)
+            needleMoveDirRef.current = 0;
+            // Khởi đầu thanh giằng co tại mốc cân bằng 50% Xanh (Thu phục) / 50% Đỏ (Phản kháng)
+            safeHoldProgressRef.current = 50;
+            setSafeHoldProgress(50);
+            const timerVal = hitFish.species.difficultyLevel >= 5 ? 26.0 : 20.0;
+            reelingTimeRemainingRef.current = timerVal;
+            setReelingTimeRemaining(timerVal);
           }
 
           hookPosRef.current = { x: hitFish.x, y: hitFish.y };
@@ -649,6 +772,7 @@ export const FishPond: React.FC<FishPondProps> = ({
             handleRodBroken();
           } else {
             // TIẾP TỤC HÀNH TRÌNH XOAY (Không reset góc xoay về 0°)
+            isEndingMiniGameRef.current = false;
             setGamePhase('SWINGING');
             gamePhaseRef.current = 'SWINGING';
           }
@@ -665,112 +789,114 @@ export const FishPond: React.FC<FishPondProps> = ({
 
       // 5. CƠ CHẾ KÉO CÁ TƯƠNG TÁC CAO & KỊCH TÍNH (INTERACTIVE REELING)
       if (phase === 'REELING' && hookedFishRef.current) {
-        const diff = hookedFishRef.current.species.difficultyLevel;
+        const hitFish = hookedFishRef.current;
+        const tier = getFishTier(hitFish.species);
         const decayStep = deltaMs / 1000;
 
-        // Đổi chu kỳ cá vùng vẫy / cá đuối sức linh hoạt
-        struggleTimerRef.current -= decayStep;
-        if (struggleTimerRef.current <= 0) {
-          if (fishStruggleRef.current === 'TIRED') {
-            fishStruggleRef.current = 'RAGING';
-            setFishStruggle('RAGING');
-            soundManager.setReelingFishState(true);
-            struggleTimerRef.current = 1.2 + Math.random() * 0.8;
-            soundManager.playLineTension();
-            soundManager.playFishStruggleSplash();
-            soundManager.triggerHaptic(45);
-          } else {
-            fishStruggleRef.current = 'TIRED';
-            setFishStruggle('TIRED');
-            soundManager.setReelingFishState(false);
-            struggleTimerRef.current = 1.5 + Math.random() * 0.8;
+        // Đổi chu kỳ cá vùng vẫy / cá đuối sức linh hoạt theo kích cỡ cá (Chỉ áp dụng cho Cá Nhỏ và Cá Vừa)
+        if (tier !== 3) {
+          struggleTimerRef.current -= decayStep;
+          if (struggleTimerRef.current <= 0) {
+            if (fishStruggleRef.current === 'TIRED') {
+              fishStruggleRef.current = 'RAGING';
+              setFishStruggle('RAGING');
+              soundManager.setReelingFishState(true);
+              // TĂNG TỶ LỆ & THỜI LƯỢNG QUẪY: Cá nhỏ quẫy 1.8s - 2.4s, cá vừa quẫy 2.4s - 3.2s
+              struggleTimerRef.current = tier === 1 ? 1.8 + Math.random() * 0.6 : 2.4 + Math.random() * 0.8;
+              soundManager.playLineTension();
+              soundManager.playFishStruggleSplash();
+              soundManager.triggerHaptic(55);
+            } else {
+              fishStruggleRef.current = 'TIRED';
+              setFishStruggle('TIRED');
+              soundManager.setReelingFishState(false);
+              // CỬA SỔ XANH (1.4s - 1.8s) buộc người chơi chớp thời cơ dứt khoát
+              struggleTimerRef.current = tier === 1 ? 1.4 + Math.random() * 0.4 : 1.5 + Math.random() * 0.5;
+            }
           }
         }
 
-        const isRaging = fishStruggleRef.current === 'RAGING';
+        const isRaging = tier !== 3 && fishStruggleRef.current === 'RAGING';
 
-        // Tier 1 Small Fish: Giới hạn thời gian giật cá
-        if (diff <= 1 || hookedFishRef.current.species.baseWeightKg < 2.5) {
-          setReelingTimeRemaining((t) => {
-            const nextT = t - decayStep;
-            if (nextT <= 0) {
+        // Đếm ngược thời gian kéo cá chung (đồng bộ qua ref, tránh lệch state)
+        reelingTimeRemainingRef.current = Math.max(0, reelingTimeRemainingRef.current - decayStep);
+        setReelingTimeRemaining(reelingTimeRemainingRef.current);
+
+        // HẾT THỜI GIAN ĐẾM NGƯỢC
+        if (reelingTimeRemainingRef.current <= 0) {
+          if (!isEndingMiniGameRef.current && hookedFishRef.current) {
+            if (tier === 1) {
               handleFishEscape('Hết giờ! Cá nhỏ đã nhả mồi bơi mất!');
-              return 0;
-            }
-            return nextT;
-          });
-        }
-
-        // Medium Fish: Giằng co theo nhịp cá quẫy (Hardcore: quẫy -38%/s, mệt -14%/s)
-        if (diff === 2 || diff === 3) {
-          setReelingTimeRemaining((t) => {
-            const nextT = t - decayStep;
-            if (nextT <= 0) {
+            } else if (tier === 2) {
               handleFishEscape('Hết thời gian! Cá đã giật đứt mồi chạy mất!');
-              return 0;
+            } else {
+              // Tier 3: Nếu bên XANH >= 50% (Xanh nhiều hơn Đỏ) -> BẮT ĐƯỢC!
+              // Nếu bên ĐỎ > 50% (Xanh < 50%) -> SẨY CÁ!
+              if (safeHoldProgressRef.current >= 50) {
+                handleCatchSuccess();
+              } else {
+                handleFishEscape('Hết giờ! Cá ở ngoài vùng xanh nhiều hơn và đã thoát thân!');
+              }
             }
-            return nextT;
-          });
-
-          setReelProgress((p) => {
-            const decayRate = isRaging ? 38 : 14;
-            return Math.max(0, p - decayRate * decayStep);
-          });
+          }
         }
 
-        // Hard / Gigantic Fish: VÙNG AN TOÀN TRÔI DẠT (MOVING GREEN ZONE - HARDCORE)
-        if (diff >= 4) {
-          setReelingTimeRemaining((t) => {
-            const nextT = t - decayStep;
-            if (nextT <= 0) {
-              handleFishEscape('Cá khổng lồ vùng vẫy quá lâu làm đứt dây!');
-              return 0;
-            }
-            return nextT;
-          });
+        // Tier 2: Giằng co theo nhịp cá quẫy (quẫy tụt -20%/s, mệt tụt nhẹ -6%/s)
+        if (tier === 2) {
+          const decayRate = isRaging ? 20 : 6;
+          reelProgressRef.current = Math.max(0, reelProgressRef.current - decayRate * decayStep);
+          setReelProgress(reelProgressRef.current);
+        }
 
-          // Vùng an toàn trôi dạt nhanh và hẹp hơn
-          const driftOffset = Math.sin(currentTime * 0.0038) * 22;
+        // Tier 3: Cá Lớn / Cực Khó (CHỈ ĐIỀU KHIỂN KIM VÀO VÙNG XANH - KHÔNG QUẪY ĐUÔI SẨY CÁ)
+        if (tier === 3) {
+          const fishWeight = hitFish.species.baseWeightKg || 10;
+          const baseHalf = Math.max(3.2, 9.6 - fishWeight * 0.18);
+          const rodBonus = (rod.safeZoneBonus || 0) * 0.15;
+          const halfWidth = +(baseHalf + rodBonus).toFixed(1);
+
+          const driftSpeed = 0.0013 + (hitFish.species.difficultyLevel >= 5 ? 0.0006 : 0);
+          const driftOffset = Math.sin(currentTime * driftSpeed) * 24;
           const greenCenter = 50 + driftOffset;
-          const halfWidth = 8 + (rod.safeZoneBonus || 0) * 0.28;
-          const greenMin = Math.max(10, Math.round(greenCenter - halfWidth));
-          const greenMax = Math.min(90, Math.round(greenCenter + halfWidth));
+          const greenMin = Math.max(8, Math.round(greenCenter - halfWidth));
+          const greenMax = Math.min(92, Math.round(greenCenter + halfWidth));
           setSafeZoneBounds({ min: greenMin, max: greenMax });
 
-          // Sức căng tự tụt khi thả tay (tụt nhanh hơn khi cá quẫy)
-          setTension((ten) => {
-            const naturalDecay = isRaging ? 38 : 22;
-            const nextTen = ten - naturalDecay * decayStep;
+          // Di chuyển kim đỏ theo nút bấm qua lại (hoàn toàn mượt mà, không bị gián đoạn hay rung giật quẫy)
+          let nextTen = tensionRef.current;
+          if (needleMoveDirRef.current !== 0) {
+            const moveSpeed = 55 + (rod.reelingPower || 1) * 8; // % / giây
+            nextTen += needleMoveDirRef.current * moveSpeed * decayStep;
+          }
+          const clampedTen = Math.max(6, Math.min(94, nextTen));
+          tensionRef.current = clampedTen;
+          setTension(clampedTen);
 
-            if (nextTen >= 91) {
-              handleFishEscape('💥 ĐỨT DÂY CÂU! Bạn đã giật cần quá mạnh làm đứt dây!');
-              return 91;
-            }
-            if (nextTen <= 9) {
-              handleFishEscape('💨 SẨY CÁ! Dây câu quá chùng, cá đã nhả lưỡi câu chạy mất!');
-              return 0;
-            }
-            return nextTen;
-          });
+          // Kiểm tra kim đỏ có nằm trong Vùng Xanh không
+          const isInZone = clampedTen >= greenMin && clampedTen <= greenMax;
+          let nextHold = safeHoldProgressRef.current;
+          if (isInZone) {
+            // Trong vùng xanh: Tăng bên Xanh, đẩy lùi bên Đỏ (+18%/s)
+            const gainRate = 18 + (rod.reelingPower || 1) * 3.5;
+            nextHold = Math.min(100, nextHold + gainRate * decayStep);
+          } else {
+            // Lệch khỏi vùng xanh: Bên Đỏ phản kháng lấn át (-13%/s)
+            const lossRate = 13;
+            nextHold = Math.max(0, nextHold - lossRate * decayStep);
+          }
 
-          setTension((curTen) => {
-            const isInZone = curTen >= greenMin && curTen <= greenMax;
-            setSafeHoldProgress((sp) => {
-              // Nạp tiến trình chậm hơn, tụt nhanh hơn nếu trượt khỏi vùng xanh
-              const gainRate = isRaging ? 18 : 28;
-              const deltaHold = isInZone ? gainRate * decayStep : -25 * decayStep;
-              const nextHold = Math.min(100, Math.max(0, sp + deltaHold));
-              if (nextHold >= 100) {
-                handleCatchSuccess();
-              }
-              return nextHold;
-            });
-            return curTen;
-          });
+          safeHoldProgressRef.current = nextHold;
+          setSafeHoldProgress(nextHold);
+
+          // Nếu đạt trọn 100% Xanh -> Bắt được cá thành công ngay lập tức!
+          if (nextHold >= 100) {
+            handleCatchSuccess();
+          } else if (nextHold <= 0) {
+            // Nếu để bên Đỏ lấn át hoàn toàn về 0% -> Cá giật đứt cước bơi mất!
+            handleFishEscape('Cá đã vùng vẫy hoàn toàn lấn át và bơi mất!');
+          }
         }
       }
-
-      animId = requestAnimationFrame(loop);
     };
 
     animId = requestAnimationFrame(loop);
@@ -781,10 +907,18 @@ export const FishPond: React.FC<FishPondProps> = ({
   const handleCastLine = () => {
     if (gamePhase !== 'SWINGING') return;
 
+    if (isCatHungry) {
+      soundManager.playPop(0.5);
+      setHungryAlert('Mèo đang đói bụng! Boss không còn sức để câu cá. Hãy cho Boss ăn no nhé! 😿🍱');
+      return;
+    }
+
     if (durability <= 0) {
       handleRodBroken();
       return;
     }
+
+    isEndingMiniGameRef.current = false;
 
     const rad = (rodAngleRef.current * Math.PI) / 180;
 
@@ -810,70 +944,118 @@ export const FishPond: React.FC<FishPondProps> = ({
     gamePhaseRef.current = 'CASTING';
   };
 
-  // Bấm nút "KÉO" (PULL) trong mini-game tương tác
+  // Bấm nút "KÉO" (PULL) trong mini-game tương tác (Tier 1 & Tier 2)
   const handlePullClick = () => {
-    if (gamePhase !== 'REELING' || !hookedFish) return;
+    if (gamePhase !== 'REELING' || !hookedFishRef.current || isEndingMiniGameRef.current) return;
+
+    // Chống spam phím / click vô thức với cooldown 110ms
+    const now = Date.now();
+    if (now - lastPullClickTimeRef.current < 110) return;
+    lastPullClickTimeRef.current = now;
 
     soundManager.startReelingSound();
-    const diff = hookedFish.species.difficultyLevel;
+    const hitFish = hookedFishRef.current;
+    const tier = getFishTier(hitFish.species);
     const isRaging = fishStruggleRef.current === 'RAGING';
 
-    const reelPitch = isRaging ? 0.95 : 1.35;
-    soundManager.playReelClick(reelPitch);
+    // === QUY TẮC CỐT LÕI: KHI CÁ ĐANG QUẪY (ĐỎ) -> BUÔNG TAY, BẤM LÀ PHẠT NẶNG / ĐỨT CƯỚC ===
     if (isRaging) {
-      soundManager.playFishStruggleSplash();
+      registerMistake('Cá quẫy quá mạnh mà bạn cố giật cước làm đứt dây rồi!');
+      return; // Tuyệt đối không tính điểm kéo khi cá đang quẫy đỏ!
     }
-    soundManager.triggerHaptic(isRaging ? 50 : 30);
 
-    // Tier 1: Small Fish (6 taps - nếu bấm lúc cá quẫy có thể bị tuột 1 tap)
-    if (diff <= 1 || hookedFish.species.baseWeightKg < 2.5) {
-      if (isRaging && Math.random() < 0.45 && pullTapsLeft < 6) {
-        soundManager.playFishStruggleSplash();
-        setPullTapsLeft((prev) => Math.min(6, prev + 1));
-      } else {
-        const remaining = pullTapsLeft - 1;
-        setPullTapsLeft(remaining);
-        if (remaining <= 0) {
-          handleCatchSuccess();
-        }
+    // === KHI CÁ THẤM MỆT (XANH): NHẤP KÉO THU PHỤC CÁ ===
+    soundManager.playReelClick(1.35);
+    soundManager.triggerHaptic(30);
+
+    // Tier 1: Small Fish (5 nhát kéo có nhịp điệu khi Xanh)
+    if (tier === 1) {
+      const remaining = pullTapsLeftRef.current - 1;
+      pullTapsLeftRef.current = remaining;
+      setPullTapsLeft(remaining);
+      if (remaining <= 0) {
+        handleCatchSuccess();
       }
       return;
     }
 
-    // Tier 2: Medium (Đo lực nhịp nhàng - nếu kéo lúc cá đang quẫy sẽ bị phạt giật lùi!)
-    if (diff <= 3 || hookedFish.species.baseWeightKg < 9) {
-      if (isRaging) {
-        soundManager.playFishStruggleSplash();
-        soundManager.triggerHaptic(50);
-        // Kéo sai nhịp lúc cá quẫy bị phạt tụt lùi tiến trình
-        setReelProgress((prev) => Math.max(0, prev - 6));
-        return;
+    // Tier 2: Medium (Đo lực nhịp nhàng - nhấp khi Xanh +11% * reelingPower)
+    if (tier === 2) {
+      const addedPower = 11 * currentRod.reelingPower;
+      const nextP = Math.min(100, reelProgressRef.current + addedPower);
+      reelProgressRef.current = nextP;
+      setReelProgress(nextP);
+      if (nextP >= 100) {
+        handleCatchSuccess();
       }
-      const addedPower = 16 * currentRod.reelingPower;
-      setReelProgress((prev) => {
-        const nextP = prev + addedPower;
-        if (nextP >= 100) {
-          handleCatchSuccess();
-          return 100;
-        }
-        return nextP;
-      });
       return;
-    }
-
-    // Tier 3: Hard (Kiểm soát sức căng trong Vùng An Toàn - nhạy cảm với đứt dây)
-    if (diff >= 4) {
-      setTension((prev) => {
-        const added = (isRaging ? 22 : 12) * currentRod.reelingPower;
-        const nextTen = prev + added;
-        if (nextTen >= 91) {
-          handleFishEscape('💥 ĐỨT DÂY CÂU! Bạn đã giật cần quá mạnh lúc cá quẫy!');
-          return 91;
-        }
-        return nextTen;
-      });
     }
   };
+
+  // Điều khiển kim đỏ qua lại (Nút bấm Trái / Phải cho Tier 3: thuần kỹ năng lái kim)
+  const handleNeedleMoveStart = (e: React.PointerEvent<HTMLButtonElement>, dir: number) => {
+    e.stopPropagation();
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+
+    if (isEndingMiniGameRef.current || !hookedFishRef.current) return;
+
+    needleMoveDirRef.current = dir;
+    // Bước nhảy tức thì khi nhấp chạm (nhanh nhạy)
+    const nextTen = Math.max(6, Math.min(94, tensionRef.current + dir * 4));
+    tensionRef.current = nextTen;
+    setTension(nextTen);
+    soundManager.playPop(dir < 0 ? 1.15 : 1.35);
+    soundManager.triggerHaptic(15);
+  };
+
+  const handleNeedleMoveEnd = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+    needleMoveDirRef.current = 0;
+  };
+
+  // Chạm hoặc kéo ngón tay trực tiếp trên thanh sức căng
+  const handleBarPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isEndingMiniGameRef.current || !hookedFishRef.current) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width > 0) {
+      const clickX = e.clientX - rect.left;
+      const targetPercent = Math.max(6, Math.min(94, (clickX / rect.width) * 100));
+      tensionRef.current = targetPercent;
+      setTension(targetPercent);
+      soundManager.playPop(1.2);
+    }
+  };
+
+  // Hỗ trợ phím mũi tên và phím A/D trên bàn phím
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (gamePhaseRef.current !== 'REELING' || isEndingMiniGameRef.current || !hookedFishRef.current) return;
+      if (['ArrowLeft', 'ArrowRight', 'a', 'd', 'A', 'D'].includes(e.key)) {
+        const dir = (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') ? -1 : 1;
+        needleMoveDirRef.current = dir;
+        const nextTen = Math.max(6, Math.min(94, tensionRef.current + dir * 3.5));
+        tensionRef.current = nextTen;
+        setTension(nextTen);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (['ArrowLeft', 'ArrowRight', 'a', 'd', 'A', 'D'].includes(e.key)) {
+        needleMoveDirRef.current = 0;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   // Mua hoặc trang bị cần câu từ Rod Shop
   const handleBuyRod = (rodId: string) => {
@@ -902,7 +1084,7 @@ export const FishPond: React.FC<FishPondProps> = ({
   return (
     <div className="w-full max-w-xl mx-auto min-h-[calc(100vh-140px)] flex flex-col justify-between font-body-md select-none bg-gradient-to-b from-[#FFF9F5] via-[#FFF2EB] to-[#FCEAE1] text-[#231918] rounded-2xl sm:rounded-[32px] shadow-sm sm:shadow-2xl border border-amber-100/60 overflow-hidden relative">
       {/* 1. COMPACT KAWAII MOBILE HEADER BAR */}
-      <div className="flex flex-col gap-1.5 px-3 pt-2 pb-1.5 bg-white/80 backdrop-blur-md border-b border-amber-200/50 shadow-xs z-50 shrink-0">
+      <div className="flex flex-col gap-1.5 px-3 pt-2 pb-1.5 bg-white/80 backdrop-blur-md border-b border-amber-200/50 shadow-xs z-20 shrink-0">
         {/* ROW 1: Back | Title Badge | Coins & Basket Badges */}
         {/* <div className="flex items-center justify-between gap-1.5 w-full">
           <button
@@ -1040,7 +1222,7 @@ export const FishPond: React.FC<FishPondProps> = ({
       {/* 2. MAIN POND WATER ARENA (CỐ ĐỊNH KHUNG HÌNH BỂ KÍNH, KHÔNG PHÓNG TO THU NHỎ BACKGROUND) */}
       <div
         ref={pondRef}
-        className="relative mx-2 sm:mx-3 rounded-2xl sm:rounded-3xl border-4 border-white/95 shadow-md overflow-hidden bg-slate-900 cursor-crosshair select-none flex-1 min-h-[420px] sm:min-h-[460px] max-h-[580px] my-1"
+        className="relative mx-1.5 sm:mx-3 rounded-2xl sm:rounded-3xl border-3 sm:border-4 border-white/95 shadow-md overflow-hidden bg-slate-900 cursor-crosshair select-none flex-1 min-h-[300px] sm:min-h-[380px] max-h-[480px] my-1"
         onClick={handleCastLine}
       >
         {/* FIXED HARDWARE-ACCELERATED AQUARIUM BACKGROUND: Cố định tuyệt đối, đúng 1 kích thước ban đầu */}
@@ -1063,7 +1245,8 @@ export const FishPond: React.FC<FishPondProps> = ({
 
         {/* SWIMMING FISH ACTORS: Bơi ngẫu nhiên tự nhiên */}
         {swimmingFish.map((fishItem) => {
-          const displaySize = Math.max(48, Math.min(84, Math.round(fishItem.species.size * 0.72)));
+          // Thu nhỏ kích thước cá phù hợp tỷ lệ màn hình mobile
+          const displaySize = Math.max(26, Math.min(50, Math.round(fishItem.species.size * 0.42)));
           const isHookedInReel = gamePhase === 'REELING' && hookedFish?.instanceId === fishItem.instanceId;
           const struggleClass = isHookedInReel
             ? fishStruggle === 'RAGING'
@@ -1071,10 +1254,13 @@ export const FishPond: React.FC<FishPondProps> = ({
               : 'fish-struggling-tired'
             : '';
 
+          // Hướng bơi: Nếu sang phải (facingRight hoặc vx > 0) thì scaleX(-1) vì hình gốc cá nhìn sang trái
+          const isMovingRight = fishItem.vx !== 0 ? fishItem.vx > 0 : fishItem.facingRight;
+
           return (
             <div
               key={fishItem.instanceId}
-              className={`swimming-fish-actor ${fishItem.isCaught ? 'fish-got-caught' : ''} ${struggleClass}`}
+              className={`swimming-fish-actor ${fishItem.isCaught ? 'fish-got-caught' : ''}`}
               style={{
                 left: `${fishItem.x}%`,
                 top: `${fishItem.y}%`,
@@ -1084,20 +1270,29 @@ export const FishPond: React.FC<FishPondProps> = ({
                 transition: isHookedInReel ? 'none' : 'opacity 0.3s ease',
               }}
             >
-              {/* HÌNH ẢNH CÁ: Bơi đúng hướng đầu và góc lượn sóng */}
-              <img
-                src={fishItem.species.image}
-                alt={fishItem.species.name}
-                className="fish-actor-img pointer-events-none w-full h-full object-contain"
+              {/* LỚP 1: ĐIỀU HƯỚNG XOAY ĐẦU CÁ (scaleX lật mặt + rotate góc ngẩng/chúc đầu) - Tách riêng khỏi CSS animation */}
+              <div
+                className="w-full h-full flex items-center justify-center pointer-events-none"
                 style={{
                   transform: fishItem.isCaught
                     ? undefined
-                    : `scaleX(${fishItem.facingRight ? -1 : 1}) rotate(${
-                        fishItem.facingRight ? -fishItem.pitch : fishItem.pitch
+                    : `scaleX(${isMovingRight ? -1 : 1}) rotate(${
+                        isMovingRight ? -fishItem.pitch : fishItem.pitch
                       }deg)`,
+                  transition: isHookedInReel ? 'none' : 'transform 0.25s ease-out',
                 }}
-                draggable={false}
-              />
+              >
+                {/* LỚP 2: RUNG LẮC QUẪY ĐUÔI KHI MẮC CÂU */}
+                <div className={`w-full h-full flex items-center justify-center ${struggleClass}`}>
+                  {/* LỚP 3: HÌNH ẢNH CÁ UỐN LƯỢN TỰ NHIÊN (ANIMATION WIGGLE KHÔNG GHI ĐÈ HƯỚNG XOAY ĐẦU) */}
+                  <img
+                    src={fishItem.species.image}
+                    alt={fishItem.species.name}
+                    className="fish-actor-img pointer-events-none w-full h-full object-contain"
+                    draggable={false}
+                  />
+                </div>
+              </div>
             </div>
           );
         })}
@@ -1128,27 +1323,55 @@ export const FishPond: React.FC<FishPondProps> = ({
 
         {/* FISHING LINE SVG */}
         <svg
-          className="absolute inset-0 w-full h-full pointer-events-none z-20"
+          className={`absolute inset-0 w-full h-full pointer-events-none ${
+            gamePhase === 'SWINGING' ? 'z-[35]' : 'z-20'
+          }`}
           xmlns="http://www.w3.org/2000/svg"
         >
           {/* Aiming Beam Line during SWINGING */}
           {gamePhase === 'SWINGING' && (
-            <line
-              x1={`${CAT_ORIGIN.x}%`}
-              y1={`${CAT_ORIGIN.y - 4}%`}
-              x2={`${CAT_ORIGIN.x + Math.sin((rodAngle * Math.PI) / 180) * 45}%`}
-              y2={`${CAT_ORIGIN.y - 4 - Math.cos((rodAngle * Math.PI) / 180) * 45}%`}
-              stroke="rgba(254, 240, 138, 0.65)"
-              strokeWidth="2.5"
-              strokeDasharray="6 4"
-            />
+            <>
+              {/* Tia dẫn hướng nét đứt xoay từ đúng tâm mèo */}
+              <line
+                x1={`${CAT_ORIGIN.x}%`}
+                y1={`${CAT_ORIGIN.y}%`}
+                x2={`${CAT_ORIGIN.x + Math.sin((rodAngle * Math.PI) / 180) * 45}%`}
+                y2={`${CAT_ORIGIN.y - Math.cos((rodAngle * Math.PI) / 180) * 45}%`}
+                stroke="rgba(254, 240, 138, 0.85)"
+                strokeWidth="2.5"
+                strokeDasharray="6 4"
+                className="drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]"
+              />
+
+              {/* Tâm xoay điều hướng: Điểm chốt vàng nổi bật ngay chính giữa ảnh mèo */}
+              <circle
+                cx={`${CAT_ORIGIN.x}%`}
+                cy={`${CAT_ORIGIN.y}%`}
+                r="4.5"
+                fill="#FACC15"
+                stroke="#FFFFFF"
+                strokeWidth="1.8"
+                className="drop-shadow-[0_0_8px_rgba(250,204,21,0.9)]"
+              />
+
+              {/* Điểm ngắm đầu cần câu phát sáng */}
+              <circle
+                cx={`${CAT_ORIGIN.x + Math.sin((rodAngle * Math.PI) / 180) * 45}%`}
+                cy={`${CAT_ORIGIN.y - Math.cos((rodAngle * Math.PI) / 180) * 45}%`}
+                r="3.5"
+                fill="#FEF08A"
+                stroke="#EAB308"
+                strokeWidth="1.2"
+                className="drop-shadow-[0_0_8px_rgba(254,240,138,0.9)]"
+              />
+            </>
           )}
 
           {/* Active Fishing Line during CASTING, REELING, RETRACTING */}
           {(gamePhase === 'CASTING' || gamePhase === 'REELING' || gamePhase === 'RETRACTING') && (
             <line
               x1={`${CAT_ORIGIN.x}%`}
-              y1={`${CAT_ORIGIN.y - 4}%`}
+              y1={`${CAT_ORIGIN.y}%`}
               x2={`${hookPos.x}%`}
               y2={`${hookPos.y}%`}
               stroke="#FEF08A"
@@ -1166,7 +1389,7 @@ export const FishPond: React.FC<FishPondProps> = ({
         {/* LƯỠI CÂU KIM LOẠI NỐI CHUẨN XÁC VỚI DÂY CÂU (0PX LỆCH, CÙNG CHIỀU VỚI CƯỚC) */}
         {(gamePhase === 'CASTING' || gamePhase === 'REELING' || gamePhase === 'RETRACTING') && (() => {
           const deltaX = hookPos.x - CAT_ORIGIN.x;
-          const deltaY = hookPos.y - (CAT_ORIGIN.y - 4);
+          const deltaY = hookPos.y - CAT_ORIGIN.y;
           const lineAngleDeg = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
           const hookRotationDeg = lineAngleDeg - 90;
 
@@ -1230,8 +1453,8 @@ export const FishPond: React.FC<FishPondProps> = ({
 
         {/* CAT ANCHOR AT BOTTOM CENTER: HÌNH TRÒN ĐỎ Ở GIỮA MÉP DƯỚI BỂ CÁ */}
         <div
-          className="absolute z-30 -translate-x-1/2 flex flex-col items-center pointer-events-none"
-          style={{ left: `${CAT_ORIGIN.x}%`, bottom: '6px' }}
+          className="absolute z-30 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none"
+          style={{ left: `${CAT_ORIGIN.x}%`, top: `${CAT_ORIGIN.y}%` }}
         >
 
           {/* Prominent Red Circular Stage */}
@@ -1256,144 +1479,272 @@ export const FishPond: React.FC<FishPondProps> = ({
             className="absolute inset-0 z-40 bg-black/50 backdrop-blur-xs flex flex-col items-center justify-center p-3 sm:p-4 animate-in fade-in"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-surface-bright/95 border-2 border-amber-400 rounded-3xl p-3.5 sm:p-5 max-w-sm w-full max-h-[88vh] overflow-y-auto shadow-2xl flex flex-col items-center gap-2.5 sm:gap-3 animate-in zoom-in-95">
-              {/* Fish Preview Badge */}
-              <div className="flex items-center gap-3 w-full bg-amber-50/90 p-2 sm:p-2.5 rounded-2xl border border-amber-200">
-                <img
-                  src={hookedFish.species.image}
-                  alt={hookedFish.species.name}
-                  className={`w-12 h-12 sm:w-14 sm:h-14 object-contain ${fishStruggle === 'RAGING' ? 'animate-bounce' : 'animate-pulse'}`}
-                />
-                <div className="flex-1 min-w-0 text-left">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-on-surface text-sm truncate">
-                      {hookedFish.species.name}
-                    </span>
-                    <span
-                      className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white shrink-0"
-                      style={{ backgroundColor: hookedFish.species.rarityColor }}
-                    >
-                      {hookedFish.species.difficultyLabel}
+            <div className="bg-surface-bright/95 border-2 border-amber-400 rounded-3xl p-3 sm:p-4 max-w-sm w-full shadow-2xl flex flex-col items-center gap-2.5 animate-in zoom-in-95">
+              {/* Compact Fish Info + Countdown Timer Header */}
+              <div className="flex items-center justify-between w-full bg-amber-50/90 px-3 py-1.5 rounded-2xl border border-amber-200">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <img
+                    src={hookedFish.species.image}
+                    alt={hookedFish.species.name}
+                    className={`w-9 h-9 sm:w-10 sm:h-10 object-contain shrink-0 ${fishStruggle === 'RAGING' ? 'animate-bounce' : 'animate-pulse'}`}
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-on-surface text-xs sm:text-sm truncate">
+                        {hookedFish.species.name}
+                      </span>
+                      <span
+                        className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white shrink-0"
+                        style={{ backgroundColor: hookedFish.species.rarityColor }}
+                      >
+                        {hookedFish.species.difficultyLabel}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-on-surface-variant font-medium">
+                      ~{hookedFish.species.baseWeightKg} kg
                     </span>
                   </div>
-                  <p className="text-[11px] sm:text-xs text-on-surface-variant font-medium mt-0.5 leading-tight">
-                    ⚖️ Chuẩn loài: ~{hookedFish.species.baseWeightKg} kg • Giá: +
-                    {hookedFish.species.pricePerKg} xu/kg
-                  </p>
+                </div>
+
+                {/* Countdown Timer */}
+                <div className="flex flex-col items-end shrink-0 pl-2">
+                  <span className="text-[9px] text-amber-900 font-bold">Thời gian</span>
+                  <span className="text-red-600 font-black font-mono text-sm sm:text-base leading-none">
+                    ⏱️ {reelingTimeRemaining.toFixed(1)}s
+                  </span>
                 </div>
               </div>
 
-              {/* DYNAMIC FISH STRUGGLE STATUS ALERT BANNER */}
-              <div
-                className={`w-full py-1.5 px-2.5 rounded-xl text-center text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 leading-tight ${fishStruggle === 'RAGING'
-                    ? 'bg-red-500 text-white animate-pulse shadow-sm'
-                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                  }`}
-              >
-                {fishStruggle === 'RAGING' ? (
-                  <>
-                    <span>⚠️</span>
-                    <span>CÁ ĐANG QUẪY MẠNH! GIỮ NHẸ TAY!</span>
-                  </>
-                ) : (
-                  <>
-                    <span></span>
-                    <span>CÁ THẤM MỆT! KÉO DỒN LỰC (+150%)</span>
-                  </>
-                )}
-              </div>
+              {/* Header trạng thái: Hướng dẫn cho Cá Lớn (Tier 3) hoặc Báo Cước cho Tier 1 & 2 */}
+              {getFishTier(hookedFish.species) === 3 ? (
+                <div className="w-full flex items-center justify-between bg-purple-50/90 px-3 py-1 rounded-xl border border-purple-200 text-xs font-black text-purple-900">
+                  <span className="flex items-center gap-1.5">
+                    <span>🎮</span>
+                    <span>Lái kim đỏ vào Vùng Xanh</span>
+                  </span>
+                  <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-bold">
+                    Cần Xanh ≥ 50%
+                  </span>
+                </div>
+              ) : (
+                <div className="w-full flex items-center justify-between gap-2 px-0.5">
+                  {/* Fish State Pill */}
+                  <div
+                    className={`px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-xs ${
+                      fishStruggle === 'RAGING'
+                        ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white animate-pulse'
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white'
+                    }`}
+                  >
+                    <span>{fishStruggle === 'RAGING' ? '⚠️ Cá quẫy (Đừng bấm!)' : '🟢 Cá mệt'}</span>
+                  </div>
 
-              {/* TIER 1: Cá Nhỏ (4 taps với nguy cơ cá quẫy lùi) */}
-              {(hookedFish.species.difficultyLevel <= 1 || hookedFish.species.baseWeightKg < 2.5) && (
-                <div className="w-full flex flex-col items-center gap-1 text-center">
-                  <div className="flex items-center gap-2 my-1">
-                    {[1, 2, 3, 4].map((step) => (
-                      <span
-                        key={step}
-                        className={`w-4 h-4 rounded-full transition-all ${4 - pullTapsLeft >= step ? 'bg-emerald-500 scale-110' : 'bg-outline-variant/60'
+                  {/* Tension Strikes (3 cơ hội) */}
+                  <div className="flex items-center gap-1.5 bg-amber-100/80 px-2 py-1 rounded-xl border border-amber-200">
+                    <span className="text-[10px] font-bold text-amber-900">Cước:</span>
+                    {[1, 2, 3].map((lvl) => {
+                      const isTriggered = lineTensionMistakes >= lvl;
+                      return (
+                        <span
+                          key={lvl}
+                          className={`w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center transition-all ${
+                            isTriggered
+                              ? 'bg-red-600 text-white shadow-xs animate-bounce scale-110'
+                              : 'bg-emerald-200 text-emerald-800'
                           }`}
-                      />
-                    ))}
+                          title={lvl === 3 ? 'Đứt cước nếu phạm lỗi lần 3' : `Cảnh báo ${lvl}/3`}
+                        >
+                          {isTriggered ? (lvl === 3 ? '💥' : '✕') : lvl}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* TIER 1: Cá Nhỏ */}
+              {getFishTier(hookedFish.species) === 1 && (
+                <div className="w-full flex flex-col items-center gap-1.5 text-center">
+                  <div className="flex items-center justify-center gap-2 my-1">
+                    {[1, 2, 3, 4, 5].map((step) => {
+                      const done = 5 - pullTapsLeft >= step;
+                      return (
+                        <div
+                          key={step}
+                          className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs transition-all shadow-xs ${
+                            done
+                              ? 'bg-emerald-500 text-white scale-110 shadow-emerald-400/50'
+                              : 'bg-surface-container-high border border-outline-variant/60 text-on-surface-variant'
+                          }`}
+                        >
+                          {done ? '✓' : step}
+                        </div>
+                      );
+                    })}
                   </div>
                   <span className="text-xs text-on-surface-variant font-bold">
-                    Còn {pullTapsLeft} nhát giật (Đợi cá mệt để giật dứt khoát!)
+                    {pullTapsLeft <= 0
+                      ? '🎉 Đã thu phục thành công!'
+                      : fishStruggle === 'TIRED'
+                      ? `🟢 Còn ${pullTapsLeft} nhát kéo!`
+                      : '🔴 Cá đang quẫy! Buông tay!'}
                   </span>
                 </div>
               )}
 
-              {/* TIER 2: Cá Vừa (Giằng co theo nhịp cá quẫy) */}
-              {(hookedFish.species.difficultyLevel === 2 || hookedFish.species.difficultyLevel === 3) && (
+              {/* TIER 2: Cá Vừa */}
+              {getFishTier(hookedFish.species) === 2 && (
                 <div className="w-full flex flex-col gap-1.5">
-                  <div className="flex justify-between items-center text-xs font-bold">
-                    <span className="text-amber-800">Thanh Lực Giằng Co:</span>
-                    <span className="text-red-600">⏱️ {reelingTimeRemaining.toFixed(1)}s</span>
-                  </div>
-                  <div className="w-full h-5 bg-surface-container-high rounded-full overflow-hidden p-0.5 border border-outline-variant/40">
+                  <div className="w-full h-5 bg-surface-container-high rounded-full overflow-hidden p-0.5 border border-outline-variant/40 shadow-inner">
                     <div
-                      className="h-full bg-gradient-to-r from-amber-500 to-emerald-500 rounded-full transition-all duration-75"
+                      className="h-full bg-gradient-to-r from-amber-500 via-emerald-500 to-green-500 rounded-full transition-all duration-75 shadow-xs"
                       style={{ width: `${reelProgress}%` }}
                     />
                   </div>
-                  <span className="text-[11px] text-center font-bold text-on-surface-variant leading-tight">
-                    {fishStruggle === 'RAGING'
-                      ? 'Cá đang kéo tụt thanh lực! Nhấp nhả cầm chừng...'
-                      : 'Cá đang đuối sức! BẤM LIÊN TỤC để đầy thanh lực!'}
-                  </span>
+                  <div className="flex justify-between items-center text-[11px] font-bold text-on-surface-variant">
+                    <span>{Math.round(reelProgress)}% / 100%</span>
+                    <span className={fishStruggle === 'TIRED' ? 'text-emerald-700 font-black' : 'text-red-600 font-black'}>
+                      {fishStruggle === 'TIRED' ? '🟢 Nhấp liên tục lên 100%!' : '🔴 Thả ra kẻo đứt cước!'}
+                    </span>
+                  </div>
                 </div>
               )}
 
-              {/* TIER 3: Cá Lớn / Cực Khó (VÙNG AN TOÀN TRÔI DẠT) */}
-              {hookedFish.species.difficultyLevel >= 4 && (
-                <div className="w-full flex flex-col gap-2">
-                  <div className="flex justify-between items-center text-xs font-bold">
-                    <span className="text-purple-800">⚡ Sức Căng Dây:</span>
-                    <span className="text-emerald-700">Thu phục: {Math.round(safeHoldProgress)}%</span>
-                  </div>
+              {/* TIER 3: Cá Lớn / Cực Khó (ĐIỀU KHIỂN TRÁI / PHẢI & CÂN BẰNG TIẾN TRÌNH) */}
+              {getFishTier(hookedFish.species) === 3 && (() => {
+                const isNeedleInZone = tension >= safeZoneBounds.min && tension <= safeZoneBounds.max;
+                return (
+                  <div className="w-full flex flex-col gap-2">
+                    {/* Status header: In zone / Out zone */}
+                    <div className="flex justify-between items-center text-xs font-bold px-0.5 text-purple-900">
+                      <span>Lái kim đỏ vào Vùng Xanh:</span>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-black text-white transition-all ${
+                          isNeedleInZone ? 'bg-emerald-600 animate-pulse shadow-xs' : 'bg-rose-500'
+                        }`}
+                      >
+                        {isNeedleInZone ? '🎯 TRONG VÙNG XANH' : '⚠️ LỆCH MỤC TIÊU'}
+                      </span>
+                    </div>
 
-                  {/* Tension Bar with MOVING Safe Zone */}
-                  <div className="relative w-full h-7 bg-surface-container-high rounded-full overflow-hidden border-2 border-purple-300">
-                    {/* Moving Green Safe Zone */}
+                    {/* Tension Bar with MOVING Safe Zone & Touchable Needle */}
                     <div
-                      className="absolute top-0 bottom-0 bg-emerald-400/60 border-x-2 border-emerald-600 transition-all duration-100"
-                      style={{
-                        left: `${safeZoneBounds.min}%`,
-                        width: `${safeZoneBounds.max - safeZoneBounds.min}%`,
+                      className="relative w-full h-8 bg-surface-container-high rounded-full overflow-hidden border-2 border-purple-300 shadow-inner cursor-pointer select-none touch-none"
+                      onPointerDown={(e) => handleBarPointer(e)}
+                      onPointerMove={(e) => {
+                        if (e.buttons > 0 && fishStruggle !== 'RAGING') handleBarPointer(e);
                       }}
-                    />
-                    {/* Tension Needle */}
-                    <div
-                      className="absolute top-0 bottom-0 w-2.5 bg-red-600 rounded-full shadow-md transition-all duration-75 -ml-1.5"
-                      style={{ left: `${tension}%` }}
-                    />
-                  </div>
+                      title="Chạm hoặc kéo trực tiếp trên thanh để di chuyển kim đỏ"
+                    >
+                      {/* Moving Green Safe Zone */}
+                      <div
+                        className={`absolute top-0 bottom-0 transition-all duration-100 ${
+                          isNeedleInZone
+                            ? 'bg-emerald-400/90 border-x-2 border-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]'
+                            : 'bg-emerald-400/50 border-x-2 border-emerald-600'
+                        }`}
+                        style={{
+                          left: `${safeZoneBounds.min}%`,
+                          width: `${safeZoneBounds.max - safeZoneBounds.min}%`,
+                        }}
+                      />
+                      {/* Tension Needle (Kim Đỏ) */}
+                      <div
+                        className="absolute top-0 bottom-0 w-3 bg-red-600 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.95)] border border-white transition-all duration-75 -ml-1.5 z-10 flex items-center justify-center pointer-events-none"
+                        style={{ left: `${tension}%` }}
+                      >
+                        <div className="w-1 h-4 bg-white rounded-full opacity-90" />
+                      </div>
+                    </div>
 
-                  <div className="w-full h-2.5 bg-surface-container rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-500 rounded-full transition-all"
-                      style={{ width: `${safeHoldProgress}%` }}
-                    />
-                  </div>
+                    {/* DUAL PROGRESS BAR: 100% CÂN BẰNG XANH (THU PHỤC) & ĐỎ (PHẢN KHÁNG) */}
+                    {(() => {
+                      const greenPercent = Math.max(0, Math.min(100, Math.round(safeHoldProgress)));
+                      const redPercent = 100 - greenPercent;
+                      return (
+                        <div className="flex flex-col gap-1 w-full bg-surface-container/60 p-2 rounded-2xl border border-amber-200/80">
+                          <div className="flex justify-between items-center text-xs font-black px-0.5">
+                            <span className="text-emerald-700 flex items-center gap-1">
+                              <span>🟢 Xanh:</span>
+                              <span className="font-mono text-sm">{greenPercent}%</span>
+                            </span>
+                            <span className="text-[10px] text-amber-800 font-bold">
+                              {greenPercent >= 50 ? '🏆 Đang thắng (≥50%)' : '⚠️ Cần Xanh ≥ 50%'}
+                            </span>
+                            <span className="text-red-600 flex items-center gap-1">
+                              <span className="font-mono text-sm">{redPercent}%</span>
+                              <span>:Đỏ 🔴</span>
+                            </span>
+                          </div>
 
-                  <span className="text-[11px] text-center font-bold text-purple-900 leading-tight">
-                    Vùng Xanh đang trôi dạt! Điều tiết kim đỏ bám sát VÙNG XANH để thu phục cá khủng!
-                  </span>
+                          {/* Thanh tiến trình 100% đồng bộ tuyệt đối: Nền Đỏ + Lớp phủ Xanh */}
+                          <div className="relative w-full h-4 bg-rose-500 rounded-full overflow-hidden border border-white shadow-inner">
+                            {/* Bên XANH (Thu phục) phủ chính xác theo % hiển thị */}
+                            <div
+                              className="h-full bg-emerald-500 transition-all duration-75 relative rounded-full"
+                              style={{ width: `${greenPercent}%` }}
+                            >
+                              <div className="absolute inset-0 bg-white/20 animate-pulse rounded-full" />
+                            </div>
+
+                            {/* Vạch mốc ranh giới 50% ở giữa */}
+                            <div
+                              className="absolute top-0 bottom-0 left-1/2 -ml-0.5 w-1 bg-yellow-300 z-10 shadow-[0_0_6px_rgba(253,224,71,1)] pointer-events-none"
+                              title="Mốc cân bằng 50%"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                );
+              })()}
+
+              {/* CÁC NÚT ĐIỀU KHIỂN: Nút Trái / Phải cho Tier 3, Nút Kéo cho Tier 1 & 2 */}
+              {getFishTier(hookedFish.species) === 3 ? (
+                <div className="grid grid-cols-2 gap-2.5 w-full mt-0.5">
+                  <button
+                    type="button"
+                    className="py-3 px-2 rounded-2xl font-black text-sm sm:text-base shadow-lg transition-all flex items-center justify-center gap-1.5 border-2 cursor-pointer select-none touch-none active:scale-95 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:brightness-110 text-white border-white/60 shadow-blue-500/30"
+                    onPointerDown={(e) => handleNeedleMoveStart(e, -1)}
+                    onPointerUp={handleNeedleMoveEnd}
+                    onPointerLeave={handleNeedleMoveEnd}
+                    onPointerCancel={handleNeedleMoveEnd}
+                  >
+                    <span className="text-lg">◀</span>
+                    <span>QUA TRÁI</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="py-3 px-2 rounded-2xl font-black text-sm sm:text-base shadow-lg transition-all flex items-center justify-center gap-1.5 border-2 cursor-pointer select-none touch-none active:scale-95 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:brightness-110 text-white border-white/60 shadow-indigo-500/30"
+                    onPointerDown={(e) => handleNeedleMoveStart(e, 1)}
+                    onPointerUp={handleNeedleMoveEnd}
+                    onPointerLeave={handleNeedleMoveEnd}
+                    onPointerCancel={handleNeedleMoveEnd}
+                  >
+                    <span>QUA PHẢI</span>
+                    <span className="text-lg">▶</span>
+                  </button>
                 </div>
-              )}
-
-              {/* NÚT "KÉO" (PULL) TO NỔI BẬT & ĐỔI MÀU THEO TRẠNG THÁI */}
-              <button
-                type="button"
-                onClick={handlePullClick}
-                className={`w-full py-3 sm:py-3.5 mt-1 rounded-2xl font-black text-lg sm:text-xl shadow-lg hover:scale-102 active:scale-95 transition-all flex items-center justify-center gap-2 border-2 ${fishStruggle === 'TIRED'
-                    ? 'bg-gradient-to-r from-emerald-500 via-amber-400 to-yellow-400 text-amber-950 border-white animate-pulse shadow-amber-300/60'
-                    : 'bg-gradient-to-r from-red-600 via-orange-600 to-amber-600 text-white border-yellow-300 shadow-red-500/50'
+              ) : (
+                <button
+                  type="button"
+                  onClick={handlePullClick}
+                  className={`w-full py-3 mt-0.5 rounded-2xl font-black text-base sm:text-lg shadow-xl transition-all flex items-center justify-center gap-2 border-2 cursor-pointer select-none active:scale-95 ${
+                    fishStruggle === 'TIRED'
+                      ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-green-600 text-white border-emerald-200 animate-pulse shadow-emerald-500/40'
+                      : 'bg-gradient-to-r from-rose-600 via-red-600 to-amber-700 text-white border-yellow-300 shadow-red-500/50'
                   }`}
-              >
-                <span>🎣</span>
-                <span>
-                  {fishStruggle === 'TIRED' ? 'KÉO DỒN LỰC !!!' : 'KÉO (PULL)'}
-                </span>
-              </button>
+                >
+                  <span className="text-xl">{fishStruggle === 'TIRED' ? '🎣' : '⚠️'}</span>
+                  <span>
+                    {fishStruggle === 'TIRED'
+                      ? 'NHẤP ĐỂ KÉO! (CÁ MỆT)'
+                      : 'BUÔNG TAY RA! (CÁ QUẪY)'}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1415,6 +1766,29 @@ export const FishPond: React.FC<FishPondProps> = ({
           <div className="absolute top-14 sm:top-20 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white px-3.5 py-1.5 sm:px-5 sm:py-2 rounded-full font-bold shadow-2xl border-2 border-white flex items-center justify-center gap-1.5 animate-bounce max-w-[88vw] text-xs sm:text-sm text-center">
             <span>💥</span>
             <span>{brokenAlert}</span>
+          </div>
+        )}
+
+        {/* HUNGRY CAT ALERT */}
+        {hungryAlert && (
+          <div className="absolute top-14 sm:top-20 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-red-600 via-rose-600 to-orange-600 text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-2xl font-bold shadow-2xl border-2 border-white flex flex-col items-center gap-1.5 animate-bounce max-w-[90vw] text-xs sm:text-sm text-center">
+            <div className="flex items-center gap-1.5">
+              <span className="text-lg">😿</span>
+              <span>{hungryAlert}</span>
+            </div>
+            {onGoToFeed && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onGoToFeed();
+                }}
+                className="mt-0.5 px-3.5 py-1 rounded-full bg-white text-red-600 font-black text-xs shadow-md hover:bg-amber-50 active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+              >
+                <span>🍱</span>
+                <span>Về phòng cho Boss ăn ngay</span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1445,53 +1819,80 @@ export const FishPond: React.FC<FishPondProps> = ({
             <span className="text-[10px] sm:text-xs font-black">Đổi Cần</span>
           </button>
 
-          {/* Nút 2: Quăng Cần Ngay (Nút chính flex-1) */}
-          <button
-            type="button"
-            onClick={gamePhase === 'SWINGING' ? handleCastLine : undefined}
-            disabled={gamePhase !== 'SWINGING'}
-            className={`flex-1 h-12 rounded-2xl font-extrabold text-sm sm:text-base shadow-[0_4px_0_#E25D45] transition-all flex items-center justify-center gap-1.5 select-none ${
-              gamePhase === 'SWINGING'
-                ? 'bg-gradient-to-r from-[#FF7E67] via-[#FF6B6B] to-[#E25D45] text-white hover:opacity-95 active:translate-y-0.5 active:shadow-none cursor-pointer'
-                : 'bg-[#F1DEDC] text-[#8B716D] shadow-none cursor-not-allowed opacity-90'
-            }`}
-          >
-            {gamePhase === 'SWINGING' && (
-              <>
-                <span>Quăng Cần Ngay</span>
-                <span>🎯</span>
-              </>
-            )}
-            {gamePhase === 'CASTING' && (
-              <>
-                <span>Đang Phóng Dây...</span>
-                <span>🪝</span>
-              </>
-            )}
-            {gamePhase === 'REELING' && (
-              <>
-                <span>Đang Kéo Cá!</span>
-                <span>⚡</span>
-              </>
-            )}
-            {gamePhase === 'RETRACTING' && (
-              <>
-                <span>Đang Thu Dây Về...</span>
-                <span>🔄</span>
-              </>
-            )}
-          </button>
+          {/* Nút 2: Quăng Cần Ngay hoặc Nút Báo Mèo Đói */}
+          {isCatHungry ? (
+            <button
+              type="button"
+              onClick={onGoToFeed || handleCastLine}
+              className="flex-1 h-12 rounded-2xl font-extrabold text-xs sm:text-sm shadow-[0_4px_0_#991B1B] bg-gradient-to-r from-red-500 via-rose-500 to-red-600 text-white hover:opacity-95 active:translate-y-0.5 active:shadow-none cursor-pointer flex items-center justify-center gap-1.5 select-none animate-pulse"
+            >
+              <span>😿</span>
+              <span>Mèo Đang Đói • Cho Boss Ăn Ngay 🍱</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={gamePhase === 'SWINGING' ? handleCastLine : undefined}
+              disabled={gamePhase !== 'SWINGING'}
+              className={`flex-1 h-12 rounded-2xl font-extrabold text-sm sm:text-base shadow-[0_4px_0_#E25D45] transition-all flex items-center justify-center gap-1.5 select-none ${
+                gamePhase === 'SWINGING'
+                  ? 'bg-gradient-to-r from-[#FF7E67] via-[#FF6B6B] to-[#E25D45] text-white hover:opacity-95 active:translate-y-0.5 active:shadow-none cursor-pointer'
+                  : 'bg-[#F1DEDC] text-[#8B716D] shadow-none cursor-not-allowed opacity-90'
+              }`}
+            >
+              {gamePhase === 'SWINGING' && (
+                <>
+                  <span>Quăng Cần Ngay</span>
+                  <span>🎯</span>
+                </>
+              )}
+              {gamePhase === 'CASTING' && (
+                <>
+                  <span>Đang Phóng Dây...</span>
+                  <span>🪝</span>
+                </>
+              )}
+              {gamePhase === 'REELING' && (
+                <>
+                  <span>Đang Kéo Cá!</span>
+                  <span>⚡</span>
+                </>
+              )}
+              {gamePhase === 'RETRACTING' && (
+                <>
+                  <span>Đang Thu Dây Về...</span>
+                  <span>🔄</span>
+                </>
+              )}
+            </button>
+          )}
 
-          {/* Nút 3: Kho Cá (Mở Balo của Boss) */}
+
+          {/* Nút 3: Balo Mèo Tách Nền (thay cho nút Kho Cá cũ) */}
           {onOpenBasket && (
             <button
               type="button"
-              onClick={onOpenBasket}
-              className="w-16 sm:w-20 h-12 rounded-2xl bg-white border-2 border-emerald-300 text-emerald-800 shadow-[0_3px_0_#a0f0c7] active:translate-y-0.5 active:shadow-none flex flex-col items-center justify-center gap-0.5 hover:bg-emerald-50 active:scale-95 transition-all shrink-0 cursor-pointer"
-              title="Mở Balo Của Boss"
+              onClick={() => {
+                soundManager.playPop();
+                onOpenBasket();
+              }}
+              className="relative w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center cursor-pointer active:scale-90 hover:scale-110 transition-transform shrink-0 animate-backpack-wiggle bg-transparent border-none p-0 outline-none select-none"
+              title="Mở Balo Của Boss (Kho cá, Cần câu, Thời trang)"
+              aria-label="Mở Balo Của Boss"
             >
-              <span className="text-base leading-none">🎒</span>
-              <span className="text-[10px] sm:text-xs font-black">Kho Cá</span>
+              <div className="relative w-full h-full flex items-center justify-center">
+                <img
+                  src="/images/icon/ba-lo-hinh-meo.webp"
+                  alt="Balo Boss Mèo"
+                  className="w-full h-full object-contain select-none pointer-events-none drop-shadow-[0_4px_10px_rgba(0,0,0,0.32)]"
+                  draggable={false}
+                />
+                {basketCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[9px] sm:text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-md border-2 border-white leading-tight z-10 animate-pulse">
+                    {basketCount}
+                  </span>
+                )}
+              </div>
             </button>
           )}
         </div>
@@ -1605,7 +2006,7 @@ export const FishPond: React.FC<FishPondProps> = ({
                     const isEquipped = rod.id === activeRodId;
                     const rodDura = isEquipped ? durability : rod.maxDurability;
                     const duraPercent = Math.round((rodDura / rod.maxDurability) * 100);
-                    const repairPrice = Math.min(150, Math.floor(rod.price * 0.25));
+                    const repairPrice = rod.repairPrice ?? rod.repairCost ?? getRodRepairCost(rod);
 
                     return (
                       <div
@@ -1816,4 +2217,4 @@ export const FishPond: React.FC<FishPondProps> = ({
       })()}
     </div>
   );
-};
+});

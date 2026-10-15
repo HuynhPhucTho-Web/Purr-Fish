@@ -77,7 +77,7 @@ export const FoodShopModal: React.FC<FoodShopModalProps> = ({
                       className="growth-speed-badge"
                       style={{ background: item.speedBadgeColor }}
                     >
-                      {item.growthSpeedLabel}
+                      {item.tierLabel || item.growthSpeedLabel}
                     </span>
                   </div>
 
@@ -94,6 +94,16 @@ export const FoodShopModal: React.FC<FoodShopModalProps> = ({
                       <span className="buff-tag water-buff">+{item.waterRestore}% Nước 💧</span>
                     )}
                     <span className="buff-tag xp-buff">+{formatNumber(item.xpReward)} XP ⭐</span>
+                    {item.buffDescription && (
+                      <span className="buff-tag" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                        🛡️ {item.buffDescription}
+                      </span>
+                    )}
+                    {item.satietyBadgeLabel && (
+                      <span className="buff-tag" style={{ background: '#FAF5FF', color: '#7E22CE', border: '1px solid #E9D5FF' }}>
+                        ⏳ {item.satietyBadgeLabel}
+                      </span>
+                    )}
                   </div>
 
                   <div className="food-card-footer">

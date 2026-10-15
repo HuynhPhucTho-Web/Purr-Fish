@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { authService, type UserProfileInfo, type SimpleLocalUser } from '../services/authService';
+import { authService, type UserProfileInfo, type SimpleLocalUser, CAT_AVATARS } from '../services/authService';
 import type { GameSaveData } from '../utils/saveGame';
 import { soundManager } from '../utils/sound';
 
@@ -8,6 +8,7 @@ interface AccountSettingsViewProps {
   settings: GameSaveData['settings'];
   saveStatus?: string;
   defaultSubTab?: 'account' | 'settings';
+  gameState?: GameSaveData;
   onUpdateSettings: (newSettings: Partial<GameSaveData['settings']>) => void;
   onSaveNow: () => void;
   onResetGame: () => void;
@@ -16,6 +17,8 @@ interface AccountSettingsViewProps {
   onSyncCloudNow?: () => void;
   onOpenAuthModal?: () => void;
   onBackToCat: () => void;
+  onLogout?: () => Promise<void> | void;
+  onUpdateCatName?: (newName: string) => Promise<string>;
 }
 
 export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
@@ -23,6 +26,7 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
   settings,
   saveStatus,
   defaultSubTab = 'account',
+  gameState: _gameState,
   onUpdateSettings,
   onSaveNow,
   onResetGame,
@@ -31,18 +35,16 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
   onSyncCloudNow,
   onOpenAuthModal,
   onBackToCat,
+  onLogout,
+  onUpdateCatName,
 }) => {
   const [subTab, setSubTab] = useState<'account' | 'settings'>(defaultSubTab);
 
-  // Simple Account Form State
-  const [authMode, setAuthMode] = useState<'simple_login' | 'simple_register' | 'email_mode'>('simple_register');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [catName, setCatName] = useState('');
-  const [email, setEmail] = useState('');
+  // Cat Rename State
+  const [editCatName, setEditCatName] = useState(currentUser?.displayName || '');
+  const [isSavingName, setIsSavingName] = useState(false);
 
   // Status & Feedback
-  const [isLoading, setIsLoading] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   // Backup Code State
@@ -55,86 +57,43 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
     setTimeout(() => setFeedbackMessage(null), 3500);
   };
 
-  // 1. Tạo Tài Khoản Đơn Giản (Username & Password)
-  const handleSimpleRegister = async (e: React.FormEvent) => {
+  // 1. Đổi Tên Mèo Cưng
+  const handleSaveCatName = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    const trimmed = editCatName.trim();
+    if (!trimmed) {
+      showToast('error', 'Tên mèo cưng không được để trống!');
+      return;
+    }
+    if (!onUpdateCatName) {
+      showToast('error', 'Chức năng đổi tên tạm thời chưa khả dụng!');
+      return;
+    }
+
+    setIsSavingName(true);
     try {
       soundManager.playPop();
-      await authService.registerSimpleAccount(username, password, catName);
-      showToast('success', `Tạo tài khoản "${username}" thành công! Dữ liệu đã được liên kết.`);
-      setUsername('');
-      setPassword('');
-      setCatName('');
-      if (onSyncCloudNow) onSyncCloudNow();
+      const updated = await onUpdateCatName(trimmed);
+      showToast('success', `✨ Đã đổi tên Mèo Cưng thành "${updated}"!`);
     } catch (err: any) {
-      showToast('error', err?.message || 'Lỗi khi tạo tài khoản đơn giản!');
+      showToast('error', err?.message || 'Lỗi khi đổi tên mèo!');
     } finally {
-      setIsLoading(false);
+      setIsSavingName(false);
     }
   };
 
-  // 2. Đăng Nhập Tài Khoản Đơn Giản
-  const handleSimpleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      soundManager.playPop();
-      await authService.loginSimpleAccount(username, password);
-      showToast('success', 'Đăng nhập thành công! Tiến trình đã sẵn sàng.');
-      setUsername('');
-      setPassword('');
-      if (onSyncCloudNow) onSyncCloudNow();
-    } catch (err: any) {
-      showToast('error', err?.message || 'Tài khoản hoặc mật khẩu không chính xác!');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 3. Chơi Nhanh Khách Ẩn Danh
-  const handleGuestPlay = async () => {
-    setIsLoading(true);
-    try {
-      soundManager.playPop();
-      await authService.signInAsGuest('Sen Mới');
-      showToast('success', 'Đã cấp tài khoản Khách Nhanh 1 Chạm!');
-      if (onSyncCloudNow) onSyncCloudNow();
-    } catch (err: any) {
-      showToast('error', 'Lỗi đăng nhập khách!');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 4. Đăng ký / Đăng nhập Email Firebase
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      soundManager.playPop();
-      await authService.registerWithEmail(email, password, catName || 'Sen Nuôi Mèo');
-      showToast('success', 'Đăng ký tài khoản Email Firebase thành công!');
-      if (onSyncCloudNow) onSyncCloudNow();
-    } catch (err: any) {
-      try {
-        // Thử đăng nhập nếu đã có
-        await authService.loginWithEmail(email, password);
-        showToast('success', 'Đăng nhập Email Firebase thành công!');
-        if (onSyncCloudNow) onSyncCloudNow();
-      } catch (inner: any) {
-        showToast('error', inner?.message || 'Lỗi đăng nhập Email Firebase!');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 5. Đăng xuất
+  // 2. Đăng xuất
   const handleLogout = async () => {
     soundManager.playPop();
-    await authService.logout();
-    showToast('success', 'Đã đăng xuất tài khoản.');
+    if (onLogout) {
+      await onLogout();
+    } else {
+      await authService.logout();
+    }
+    showToast('success', 'Đã đăng xuất. Dữ liệu game đã được đặt lại ban đầu.');
+    if (onOpenAuthModal) {
+      setTimeout(onOpenAuthModal, 400);
+    }
   };
 
   // Export Save
@@ -158,6 +117,7 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
     }
   };
 
+  const isLoggedIn = Boolean(currentUser && !currentUser.isAnonymous);
   const savedAccounts = authService.getSavedAccountsList();
 
   return (
@@ -210,226 +170,150 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
       {/* SUBTAB 1: TÀI KHOẢN NGƯỜI CHƠI */}
       {subTab === 'account' && (
         <div className="account-management-section">
-          {currentUser ? (
-            /* Logged in Profile Card */
-            <div className="user-profile-hero-card">
-              <div className="hero-avatar-box">
-                {currentUser.isAnonymous ? '🐱' : '👑'}
-              </div>
+          {isLoggedIn && currentUser ? (
+            <>
+              {/* Logged in Profile Hero Card */}
+              <div className="user-profile-hero-card">
+                <div className="hero-avatar-box overflow-hidden">
+                  {currentUser.photoURL ? (
+                    <img src={currentUser.photoURL} alt={currentUser.displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    '👑'
+                  )}
+                </div>
 
-              <div className="hero-user-details">
-                <h3 className="hero-display-name">{currentUser.displayName}</h3>
-                <span className="hero-account-badge">
-                  {currentUser.isAnonymous ? '🐾 Tài Khoản Khách' : `☁️ Đã Liên Kết: ${currentUser.email || 'Nội Bộ'}`}
-                </span>
-                <p className="hero-uid-text">Mã UID: <code>{currentUser.uid}</code></p>
-              </div>
+                <div className="hero-user-details">
+                  <h3 className="hero-display-name">{currentUser.displayName}</h3>
+                  <span className="hero-account-badge">
+                    ☁️ Đã Liên Kết: {currentUser.username ? `@${currentUser.username}` : (currentUser.email || 'Cloud')}
+                  </span>
+                  <p className="hero-uid-text">Mã UID: <code>{currentUser.uid}</code></p>
+                </div>
 
-              <div className="hero-actions-row">
-                {currentUser.isAnonymous && onOpenAuthModal && (
-                  <button
-                    type="button"
-                    className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-3 py-2 rounded-xl text-xs shadow-xs cursor-pointer transition-colors"
-                    onClick={() => {
-                      soundManager.playPop();
-                      onOpenAuthModal();
-                    }}
-                  >
-                     Đăng Ký Tài Khoản Chính Thức
+                <div className="hero-actions-row">
+                  <div className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-bold">
+                    <span>🟢</span>
+                    <span>Tự động lưu Cloud</span>
+                  </div>
+                  <button type="button" className="account-logout-btn" onClick={handleLogout}>
+                    Đăng Xuất
                   </button>
-                )}
+                </div>
+              </div>
+
+              {/* Chức năng Đổi Tên Mèo Cưng khi Đăng Nhập */}
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-amber-200/90 my-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-xs sm:text-sm text-slate-800 flex items-center gap-1.5">
+                    <span>✏️</span> Đổi Tên Mèo Cưng (Hiển thị phòng mèo & BXH)
+                  </span>
+                  <span className="text-[11px] text-amber-600 font-semibold">Tối đa 30 ký tự</span>
+                </div>
+                <form onSubmit={handleSaveCatName} className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 bg-amber-50/50 border border-amber-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="Nhập tên mới cho bé mèo..."
+                    value={editCatName}
+                    onChange={(e) => setEditCatName(e.target.value)}
+                    maxLength={30}
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl cursor-pointer transition-all disabled:opacity-50 shadow-sm shrink-0"
+                    disabled={isSavingName || !editCatName.trim() || editCatName.trim() === currentUser.displayName}
+                  >
+                    {isSavingName ? 'Đang lưu...' : 'Lưu Tên Mới ✨'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Avatar Selector Card (8 Mẫu WebP dành riêng cho tài khoản) */}
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-orange-100 my-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1.5">
+                    <span>📸</span> Chọn Ảnh Đại Diện Boss Mèo (8 Mẫu WebP)
+                  </span>
+                  <span className="text-[11px] text-orange-600 font-semibold">Chạm để đổi</span>
+                </div>
+                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                  {CAT_AVATARS.map((avatarUrl, idx) => {
+                    const isCurrent = currentUser.photoURL === avatarUrl;
+                    return (
+                      <button
+                        key={avatarUrl}
+                        type="button"
+                        className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all p-0.5 cursor-pointer bg-orange-50/50 ${
+                          isCurrent
+                            ? 'border-orange-500 ring-2 ring-orange-300 scale-105 shadow-md'
+                            : 'border-gray-200 hover:border-orange-300 opacity-80 hover:opacity-100'
+                        }`}
+                        onClick={async () => {
+                          soundManager.playPop();
+                          await authService.updateUserAvatar(avatarUrl);
+                          showToast('success', `Đã cập nhật Avatar #${idx + 1}!`);
+                          if (onSyncCloudNow) onSyncCloudNow();
+                        }}
+                        title={`Avatar ${idx + 1}`}
+                      >
+                        <img
+                          src={avatarUrl}
+                          alt={`Avatar ${idx + 1}`}
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                        {isCurrent && (
+                          <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-orange-500 ring-1 ring-white" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          ) : (
+            /* Chế Độ Chơi Thử: Tránh trùng lặp form, chỉ hiển thị thông báo & nút mở Modal duy nhất */
+            <div className="auth-forms-container">
+              <div className="bg-gradient-to-b from-amber-50/90 via-orange-50/70 to-amber-50/90 border-2 border-dashed border-amber-300 rounded-3xl p-6 text-center flex flex-col items-center gap-3 shadow-sm">
+                <div className="w-16 h-16 rounded-full bg-amber-100/90 border border-amber-300 flex items-center justify-center text-3xl shadow-xs">
+                  🐾
+                </div>
+
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-amber-950">
+                    Bạn Đang Ở Chế Độ Chơi Thử (Khách)
+                  </h3>
+                  <p className="text-xs sm:text-sm text-amber-800/90 max-w-md mt-1 leading-relaxed">
+                    Trang khách chỉ hỗ trợ chơi thử nhanh trên máy. Để <strong>lưu vĩnh viễn trên Cloud</strong>, <strong>đổi tên mèo cưng</strong>, <strong>chọn 8 mẫu avatar độc quyền</strong> và <strong>đua Top bảng xếp hạng</strong>, vui lòng tạo tài khoản!
+                  </p>
+                </div>
+
+                <div className="w-full max-w-sm grid grid-cols-2 gap-2 my-1 text-left text-xs">
+                  <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                    <span className="font-bold text-amber-900 block">🔒 Avatar & Đổi tên:</span>
+                    <span className="text-amber-700 text-[11px]">Cần tài khoản để mở khóa</span>
+                  </div>
+                  <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                    <span className="font-bold text-amber-900 block">🏆 Đua Top Toàn Cầu:</span>
+                    <span className="text-amber-700 text-[11px]">Chỉ dành cho tài khoản</span>
+                  </div>
+                </div>
+
                 <button
                   type="button"
-                  className="cloud-sync-now-btn"
+                  className="w-full max-w-sm py-3 px-5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 hover:from-amber-600 hover:to-orange-600 active:scale-95 text-white font-black text-sm rounded-2xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
                   onClick={() => {
-                    soundManager.playUpgrade();
-                    if (onSyncCloudNow) onSyncCloudNow();
-                    showToast('success', 'Đã lưu tiến trình mới nhất lên Cloud Firestore!');
+                    soundManager.playPop();
+                    if (onOpenAuthModal) onOpenAuthModal();
                   }}
                 >
-                  🔄 Đồng Bộ & Lưu Cloud Ngay
-                </button>
-                <button type="button" className="account-logout-btn" onClick={handleLogout}>
-                  Đăng Xuất
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* Not logged in: Simple Account Creation / Login */
-            <div className="auth-forms-container">
-              {/* Quick Guest Play Banner */}
-              <div className="quick-guest-banner">
-                <div>
-                  <h4>Chơi Nhanh 1 Chạm (Khách Ẩn Danh)</h4>
-                  <p>Không cần đăng ký, vào chơi ngay lập tức và tự động lưu trên máy.</p>
-                </div>
-                <button
-                  type="button"
-                  className="quick-guest-play-btn"
-                  onClick={handleGuestPlay}
-                  disabled={isLoading}
-                >
-                  ⚡ Chơi Ngay
+                  <span>✨</span>
+                  <span>Tạo Tài Khoản / Đăng Nhập Đua Top</span>
                 </button>
               </div>
 
-              {/* Mode Toggle Buttons: Simple Register vs Simple Login vs Email */}
-              <div className="auth-mode-selector-bar">
-                <button
-                  type="button"
-                  className={`auth-mode-btn ${authMode === 'simple_register' ? 'mode-active' : ''}`}
-                  onClick={() => setAuthMode('simple_register')}
-                >
-                   Tạo Tài Khoản Đơn Giản
-                </button>
-                <button
-                  type="button"
-                  className={`auth-mode-btn ${authMode === 'simple_login' ? 'mode-active' : ''}`}
-                  onClick={() => setAuthMode('simple_login')}
-                >
-                  🔑 Đăng Nhập
-                </button>
-              </div>
-
-              {/* FORM 1: TẠO TÀI KHOẢN ĐƠN GIẢN */}
-              {authMode === 'simple_register' && (
-                <form className="simple-auth-form-card" onSubmit={handleSimpleRegister}>
-                  <div className="form-info-headline">
-                    <h4>Đăng Ký Đơn Giản (Chỉ cần Tên & Mật khẩu)</h4>
-                    <p>Không bắt buộc email, tạo trong 2 giây để lưu tên trên bảng xếp hạng!</p>
-                  </div>
-
-                  <div className="form-field-group">
-                    <label>Tên tài khoản (Username):</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Ví dụ: meocon123, bietdoimeo..."
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-field-group">
-                    <label>Tên chú mèo của bạn (Hiển thị trong game):</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Ví dụ: Bé Miu Miu, Chonky Boss..."
-                      value={catName}
-                      onChange={(e) => setCatName(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-field-group">
-                    <label>Mật khẩu đơn giản (Tối thiểu 4 ký tự):</label>
-                    <input
-                      type="password"
-                      className="form-input"
-                      placeholder="Nhập mật khẩu hoặc mã PIN..."
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <button type="submit" className="form-submit-btn" disabled={isLoading}>
-                    {isLoading ? 'Đang tạo tài khoản...' : 'Tạo Tài Khoản Ngay 🎉'}
-                  </button>
-                </form>
-              )}
-
-              {/* FORM 2: ĐĂNG NHẬP ĐƠN GIẢN */}
-              {authMode === 'simple_login' && (
-                <form className="simple-auth-form-card" onSubmit={handleSimpleLogin}>
-                  <div className="form-info-headline">
-                    <h4>Đăng Nhập Tài Khoản</h4>
-                    <p>Nhập tên tài khoản và mật khẩu bạn đã tạo trước đó.</p>
-                  </div>
-
-                  <div className="form-field-group">
-                    <label>Tên tài khoản (Username):</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Nhập username..."
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-field-group">
-                    <label>Mật khẩu:</label>
-                    <input
-                      type="password"
-                      className="form-input"
-                      placeholder="Nhập mật khẩu..."
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <button type="submit" className="form-submit-btn" disabled={isLoading}>
-                    {isLoading ? 'Đang đăng nhập...' : 'Đăng Nhập 🚀'}
-                  </button>
-                </form>
-              )}
-
-              {/* FORM 3: FIREBASE EMAIL MODE */}
-              {authMode === 'email_mode' && (
-                <form className="simple-auth-form-card" onSubmit={handleEmailAuth}>
-                  <div className="form-info-headline">
-                    <h4>Đăng Ký / Đăng Nhập Email Firebase</h4>
-                    <p>Dành cho người chơi muốn liên kết tài khoản Email toàn cầu.</p>
-                  </div>
-
-                  <div className="form-field-group">
-                    <label>Địa chỉ Email:</label>
-                    <input
-                      type="email"
-                      className="form-input"
-                      placeholder="tenban@gmail.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-field-group">
-                    <label>Tên hiển thị:</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Tên của bạn hoặc bé mèo..."
-                      value={catName}
-                      onChange={(e) => setCatName(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-field-group">
-                    <label>Mật khẩu (Tối thiểu 6 ký tự):</label>
-                    <input
-                      type="password"
-                      className="form-input"
-                      placeholder="Mật khẩu Firebase..."
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <button type="submit" className="form-submit-btn" disabled={isLoading}>
-                    {isLoading ? 'Đang xác thực...' : 'Đăng Ký / Đăng Nhập Email ☁️'}
-                  </button>
-                </form>
-              )}
-
-              {/* Saved Local Accounts Switcher */}
+              {/* Danh sách tài khoản đã lưu trên máy nếu có */}
               {savedAccounts.length > 0 && (
-                <div className="saved-accounts-quick-box">
+                <div className="saved-accounts-quick-box mt-4">
                   <h5>Tài khoản đã tạo trên máy này ({savedAccounts.length}):</h5>
                   <div className="saved-accounts-list">
                     {savedAccounts.map((acc: SimpleLocalUser) => (
@@ -439,12 +323,11 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
                           type="button"
                           className="switch-acc-btn"
                           onClick={() => {
-                            setUsername(acc.username);
-                            setPassword(acc.pass);
-                            setAuthMode('simple_login');
+                            soundManager.playPop();
+                            if (onOpenAuthModal) onOpenAuthModal();
                           }}
                         >
-                          Chọn
+                          Đăng Nhập
                         </button>
                       </div>
                     ))}
@@ -637,3 +520,5 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
     </div>
   );
 };
+
+export default AccountSettingsView;

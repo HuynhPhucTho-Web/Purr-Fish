@@ -1,8 +1,14 @@
 rules_version = '2';
+// Purr-Fish Cloud Firestore Security Rules - v2.1.0
+// Comprehensive Game State, User Profile & Global Leaderboard Protection
+// Updated: 2026-10-14
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // -------------------------------------------------------------
+    // Helper Functions
+    // -------------------------------------------------------------
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -11,26 +17,84 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // 1. Dữ liệu cá nhân của người chơi (GameSaveData)
-    // Chỉ chủ tài khoản mới có quyền xem và sửa dữ liệu của chính mình
+    // -------------------------------------------------------------
+    // 1. Dữ Liệu Cá Nhân Người Chơi (/users/{userId})
+    // Toàn bộ tiến trình game, kinh tế, nâng cấp, thời trang, hồ câu...
+    // -------------------------------------------------------------
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
 
-      match /{allSubcollections=**} {
-        allow read, write: if isOwner(userId);
-      }
+      allow write: if isOwner(userId)
+        // 1. Hồ sơ & định danh
+        && (!('username' in request.resource.data) || (request.resource.data.username is string && request.resource.data.username.size() <= 60))
+        && (!('catName' in request.resource.data) || (request.resource.data.catName is string && request.resource.data.catName.size() <= 60))
+        && (!('displayName' in request.resource.data) || (request.resource.data.displayName is string && request.resource.data.displayName.size() <= 60))
+        && (!('photoURL' in request.resource.data) || (request.resource.data.photoURL is string && request.resource.data.photoURL.size() <= 1000))
+        && (!('catAvatar' in request.resource.data) || (request.resource.data.catAvatar is string && request.resource.data.catAvatar.size() <= 1000))
+
+        // 2. Kinh tế & Cấp độ
+        && (!('level' in request.resource.data) || (request.resource.data.level is number && request.resource.data.level >= 1 && request.resource.data.level <= 10000))
+        && (!('xp' in request.resource.data) || (request.resource.data.xp is number && request.resource.data.xp >= 0 && request.resource.data.xp <= 100000000000))
+        && (!('fish' in request.resource.data) || (request.resource.data.fish is number && request.resource.data.fish >= 0 && request.resource.data.fish <= 100000000000))
+        && (!('coins' in request.resource.data) || (request.resource.data.coins is number && request.resource.data.coins >= 0 && request.resource.data.coins <= 100000000000))
+        && (!('totalFishCaught' in request.resource.data) || (request.resource.data.totalFishCaught is number && request.resource.data.totalFishCaught >= 0))
+        && (!('biggestFishKg' in request.resource.data) || (request.resource.data.biggestFishKg is number && request.resource.data.biggestFishKg >= 0 && request.resource.data.biggestFishKg <= 10000))
+        && (!('totalClicks' in request.resource.data) || (request.resource.data.totalClicks is number && request.resource.data.totalClicks >= 0))
+
+        // 3. Nâng cấp & Kho túi
+        && (!('upgrades' in request.resource.data) || request.resource.data.upgrades is map)
+        && (!('foodInventory' in request.resource.data) || request.resource.data.foodInventory is map)
+        && (!('fishBasket' in request.resource.data) || (request.resource.data.fishBasket is list && request.resource.data.fishBasket.size() <= 1000))
+
+        // 4. Thời trang & Trang trí phòng
+        && (!('unlockedSkins' in request.resource.data) || request.resource.data.unlockedSkins is list)
+        && (!('equippedSkin' in request.resource.data) || (request.resource.data.equippedSkin is string && request.resource.data.equippedSkin.size() <= 100))
+        && (!('ownedHats' in request.resource.data) || request.resource.data.ownedHats is list)
+        && (!('equippedHat' in request.resource.data) || (request.resource.data.equippedHat is string && request.resource.data.equippedHat.size() <= 100))
+        && (!('ownedClothes' in request.resource.data) || request.resource.data.ownedClothes is list)
+        && (!('equippedClothes' in request.resource.data) || (request.resource.data.equippedClothes is string && request.resource.data.equippedClothes.size() <= 100))
+        && (!('ownedRoomDecor' in request.resource.data) || request.resource.data.ownedRoomDecor is list)
+        && (!('equippedDecor' in request.resource.data) || request.resource.data.equippedDecor is map)
+        && (!('decorPositions' in request.resource.data) || request.resource.data.decorPositions is map)
+        && (!('hatTransforms' in request.resource.data) || request.resource.data.hatTransforms is map)
+
+        // 5. Cần câu & Ngư cụ
+        && (!('unlockedRods' in request.resource.data) || request.resource.data.unlockedRods is list)
+        && (!('equippedRodId' in request.resource.data) || (request.resource.data.equippedRodId is string && request.resource.data.equippedRodId.size() <= 100))
+        && (!('rodDurability' in request.resource.data) || (request.resource.data.rodDurability is number && request.resource.data.rodDurability >= 0))
+
+        // 6. Nhu cầu sinh tồn (Đói, khát & No Lâu)
+        && (!('food' in request.resource.data) || (request.resource.data.food is number && request.resource.data.food >= 0 && request.resource.data.food <= 100))
+        && (!('water' in request.resource.data) || (request.resource.data.water is number && request.resource.data.water >= 0 && request.resource.data.water <= 100))
+        && (!('satietyDecayReduction' in request.resource.data) || (request.resource.data.satietyDecayReduction is number && request.resource.data.satietyDecayReduction >= 0 && request.resource.data.satietyDecayReduction <= 10))
+
+        // 7. Cài đặt & Thành tựu
+        && (!('settings' in request.resource.data) || request.resource.data.settings is map)
+        && (!('achievements' in request.resource.data) || request.resource.data.achievements is list);
     }
 
-    // 2. Bảng xếp hạng toàn cầu (Global Leaderboards)
-    // - Tất cả người chơi (kể cả khách) đều có thể đọc bảng xếp hạng
-    // - Chỉ chủ tài khoản mới được ghi thông tin thứ hạng của mình
+    // -------------------------------------------------------------
+    // 2. Bảng Xếp Hạng Toàn Cầu (/leaderboards/{userId})
+    // Công khai để tất cả người chơi đều đọc được
+    // Chỉ chủ tài khoản mới được cập nhật thông tin xếp hạng của mình
+    // -------------------------------------------------------------
     match /leaderboards/{userId} {
       allow read: if true;
+
       allow write: if isOwner(userId)
-        && request.resource.data.level is number
-        && request.resource.data.level >= 1
-        && request.resource.data.xp is number
-        && request.resource.data.xp >= 0;
+        && (!('displayName' in request.resource.data) || (request.resource.data.displayName is string && request.resource.data.displayName.size() <= 60))
+        && (!('catName' in request.resource.data) || (request.resource.data.catName is string && request.resource.data.catName.size() <= 60))
+        && (!('username' in request.resource.data) || (request.resource.data.username is string && request.resource.data.username.size() <= 60))
+        && (!('photoURL' in request.resource.data) || (request.resource.data.photoURL is string && request.resource.data.photoURL.size() <= 1000))
+        && (!('level' in request.resource.data) || (request.resource.data.level is number && request.resource.data.level >= 1 && request.resource.data.level <= 10000))
+        && (!('xp' in request.resource.data) || (request.resource.data.xp is number && request.resource.data.xp >= 0 && request.resource.data.xp <= 100000000000))
+        && (!('coins' in request.resource.data) || (request.resource.data.coins is number && request.resource.data.coins >= 0 && request.resource.data.coins <= 100000000000))
+        && (!('biggestFishKg' in request.resource.data) || (request.resource.data.biggestFishKg is number && request.resource.data.biggestFishKg >= 0 && request.resource.data.biggestFishKg <= 10000))
+        && (!('rankTierKey' in request.resource.data) || (request.resource.data.rankTierKey is string && request.resource.data.rankTierKey.size() <= 50))
+        && (!('rankTierName' in request.resource.data) || (request.resource.data.rankTierName is string && request.resource.data.rankTierName.size() <= 100))
+        && (!('rankBadge' in request.resource.data) || (request.resource.data.rankBadge is string && request.resource.data.rankBadge.size() <= 50))
+        && (!('equippedSkin' in request.resource.data) || (request.resource.data.equippedSkin is string && request.resource.data.equippedSkin.size() <= 100))
+        && (!('catStageLabel' in request.resource.data) || (request.resource.data.catStageLabel is string && request.resource.data.catStageLabel.size() <= 100));
     }
   }
 }

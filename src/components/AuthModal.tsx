@@ -1,21 +1,39 @@
-import React, { useState } from 'react';
-import { authService, type UserProfileInfo, type SimpleLocalUser } from '../services/authService';
+import React, { useState, useRef } from 'react';
+import { authService, type UserProfileInfo, type SimpleLocalUser, CAT_AVATARS } from '../services/authService';
 import { soundManager } from '../utils/sound';
+import type { GameSaveData } from '../utils/saveGame';
 
 interface AuthModalProps {
   currentUser: UserProfileInfo | null;
   onClose: () => void;
-  onSyncNow?: () => void;
-  initialTab?: 'register' | 'login';
+  onSyncNow?: (overrideUser?: UserProfileInfo) => void;
+  onLoginSuccess?: (user: UserProfileInfo) => Promise<any> | any;
+  initialTab?: 'register' | 'login' | 'profile';
+  gameState?: GameSaveData;
+  level?: number;
+  rankBadge?: string;
+  rankTierName?: string;
+  onLogout?: () => Promise<void> | void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   currentUser,
   onClose,
   onSyncNow,
+  onLoginSuccess,
   initialTab = 'register',
+  gameState,
+  level = 1,
+  rankBadge = '🥉',
+  rankTierName = 'Đồng (Bronze)',
+  onLogout,
 }) => {
-  const [tab, setTab] = useState<'register' | 'login'>(initialTab);
+  const isLoggedIn = Boolean(currentUser && !currentUser.isAnonymous);
+
+  const [tab, setTab] = useState<'register' | 'login' | 'profile'>(() => {
+    if (isLoggedIn) return 'profile';
+    return initialTab === 'profile' ? 'register' : initialTab;
+  });
   const [showPassword, setShowPassword] = useState<boolean>(false);
 
   // Form states
@@ -27,6 +45,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Overlay click guard refs to prevent modal from accidentally auto-closing
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
   // Saved accounts on device
   const savedAccounts: SimpleLocalUser[] = authService.getSavedAccountsList();
@@ -54,14 +76,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       soundManager.playPop();
-      const user = await authService.registerSimpleAccount(cleanUser, cleanPass, catName);
+      const defaultAvatar = currentUser?.photoURL || localStorage.getItem('PURR_FISH_AVATAR') || CAT_AVATARS[0];
+      const user = await authService.registerSimpleAccount(cleanUser, cleanPass, catName, defaultAvatar, gameState);
       soundManager.playUnlock();
-      setSuccessMessage(`🎉 Chào Sen "${user.displayName}"! Tạo tài khoản thành công.`);
-      if (onSyncNow) onSyncNow();
-
+      setSuccessMessage(`🎉 Chào mừng "${user.displayName}"! Đã tạo tài khoản & đăng nhập thành công.`);
+      if (onSyncNow) onSyncNow(user);
       setTimeout(() => {
         onClose();
-      }, 1000);
+      }, 600);
     } catch (err: any) {
       console.error(err);
       setErrorMessage(err?.message || 'Lỗi khi tạo tài khoản! Vui lòng thử lại.');
@@ -96,11 +118,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const user = await authService.loginSimpleAccount(cleanUser, cleanPass);
       soundManager.playUnlock();
       setSuccessMessage(`🐱 Chào mừng trở lại, "${user.displayName}"!`);
-      if (onSyncNow) onSyncNow();
-
+      if (onLoginSuccess) {
+        await onLoginSuccess(user);
+      }
       setTimeout(() => {
         onClose();
-      }, 1000);
+      }, 500);
     } catch (err: any) {
       console.error(err);
       setErrorMessage(err?.message || 'Tài khoản hoặc mật khẩu không chính xác!');
@@ -118,8 +141,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       soundManager.playPop();
       const guest = await authService.signInAsGuest('Sen Mới');
       setSuccessMessage(`🐾 Đã vào game: "${guest.displayName}"!`);
-      if (onSyncNow) onSyncNow();
-      setTimeout(onClose, 800);
+      if (onSyncNow) onSyncNow(guest);
+      setTimeout(onClose, 600);
     } catch (err: unknown) {
       console.error(err);
       setErrorMessage('Không thể đăng nhập khách. Vui lòng kiểm tra kết nối mạng!');
@@ -132,62 +155,130 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleLogout = async () => {
     try {
       soundManager.playPop();
-      await authService.logout();
-      setSuccessMessage('Đã đăng xuất tài khoản.');
-      setTimeout(onClose, 800);
+      if (onLogout) {
+        await onLogout();
+      } else {
+        await authService.logout();
+      }
+      setSuccessMessage('Đã đăng xuất tài khoản. Dữ liệu game đã được đặt lại ban đầu.');
+      setTab('login');
+      setUsername('');
+      setPassword('');
+      setCatName('');
     } catch (err: any) {
       setErrorMessage(err?.message || 'Lỗi khi đăng xuất.');
     }
   };
 
+  const handleOverlayMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    mouseDownTargetRef.current = e.target;
+  };
+
+  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget && mouseDownTargetRef.current === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="game-modal-overlay" onClick={onClose}>
-      <div className="game-modal-card auth-modal-card" onClick={(e) => e.stopPropagation()}>
+    <div
+      ref={overlayRef}
+      className="game-modal-overlay"
+      onMouseDown={handleOverlayMouseDown}
+      onClick={handleOverlayClick}
+    >
+      <div
+        className="game-modal-card auth-modal-card"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="modal-header">
           <div className="modal-title-wrap">
-            <span className="modal-icon">{tab === 'register' ? '' : '🔑'}</span>
+            <span className="modal-icon">{isLoggedIn ? '👑' : tab === 'register' ? '📝' : '🔑'}</span>
             <div>
-              <h3>{tab === 'register' ? 'Tạo Tài Khoản Mèo Cưng' : 'Đăng Nhập Tài Khoản'}</h3>
-              <p className="modal-subtext">Lưu tiến trình Cloud & đua top Bảng Xếp Hạng</p>
+              <h3>
+                {isLoggedIn
+                  ? 'Hồ Sơ Mèo Cưng'
+                  : tab === 'register'
+                  ? 'Tạo Tài Khoản Mèo Cưng'
+                  : 'Đăng Nhập Tài Khoản'}
+              </h3>
+              <p className="modal-subtext">
+                {isLoggedIn
+                  ? 'Dữ liệu và thứ hạng đã liên kết máy chủ Cloud'
+                  : 'Lưu tiến trình Cloud & đua top Bảng Xếp Hạng'}
+              </p>
             </div>
           </div>
-          <button type="button" className="modal-close-btn" onClick={onClose} title="Đóng để chơi ngay">
+          <button type="button" className="modal-close-btn" onClick={onClose} title="Đóng">
             ✕
           </button>
         </div>
 
         <div className="modal-body auth-modal-body">
-          {/* If already logged in */}
-          {currentUser && !currentUser.isAnonymous ? (
-            <div className="auth-profile-box">
-              <div className="auth-avatar-circle">👑</div>
-              <h4 className="auth-user-name">{currentUser.displayName}</h4>
-              <p className="auth-user-type">
-                <span className="badge-verified">☁️ Đã đăng nhập: {currentUser.email || currentUser.displayName}</span>
-              </p>
-              <p className="auth-sync-status">
-                ✅ Dữ liệu trò chơi của bạn đang được tự động đồng bộ trên đám mây!
+          {/* NẾU ĐÃ ĐĂNG NHẬP: KHÔNG HIỆN NÚT ĐĂNG NHẬP HAY TẠO NỮA, CHỈ HIỆN HỒ SƠ & NÚT ĐĂNG XUẤT */}
+          {isLoggedIn && currentUser ? (
+            <div className="auth-profile-box mt-1">
+              <div className="relative mx-auto w-20 h-20 rounded-full border-4 border-amber-300 shadow-md overflow-hidden bg-amber-50 flex items-center justify-center">
+                {currentUser.photoURL ? (
+                  <img src={currentUser.photoURL} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-3xl">🐱</span>
+                )}
+                <span className="absolute bottom-0 inset-x-0 bg-amber-500/90 text-white text-[10px] font-black py-0.5 text-center leading-none">
+                  Lv.{level}
+                </span>
+              </div>
+
+              <h4 className="auth-user-name text-lg font-black text-slate-800 mt-2 mb-0.5">
+                {currentUser.displayName}
+              </h4>
+
+              <div className="flex items-center justify-center gap-1.5 flex-wrap my-1">
+                <span className="bg-amber-100 text-amber-900 text-xs px-2.5 py-0.5 rounded-full font-bold">
+                  {rankBadge} {rankTierName}
+                </span>
+                <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-0.5 rounded-full font-bold">
+                  ☁️ Đã Lưu Cloud
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-500 mb-2">
+                Tài khoản: <strong className="text-slate-700">{currentUser.email?.replace('@purrfish.com', '') || currentUser.displayName}</strong> • UID: <code className="text-[11px]">{currentUser.uid.slice(0, 10)}...</code>
               </p>
 
-              <div className="auth-actions-row">
+              {successMessage && <div className="auth-success-banner mb-3">{successMessage}</div>}
+
+              <div className="auth-actions-row flex flex-col gap-2 w-full mt-2">
+                <div className="w-full bg-emerald-50 border border-emerald-200/90 text-emerald-900 rounded-xl p-2.5 flex items-center gap-2 text-xs font-semibold">
+                  <span className="text-base">🟢</span>
+                  <div className="text-left">
+                    <p className="font-bold">Tự Động Lưu Dữ Liệu Liên Tục</p>
+                    <p className="text-[11px] text-emerald-700">Mọi tiến trình, số xu và vật phẩm luôn tự động lưu lên Cloud.</p>
+                  </div>
+                </div>
+
                 <button
                   type="button"
-                  className="auth-sync-btn"
-                  onClick={() => {
-                    if (onSyncNow) onSyncNow();
-                    soundManager.playUpgrade();
-                    setSuccessMessage('Đã lưu tiến trình mới nhất lên Cloud!');
-                  }}
+                  className="auth-logout-btn w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-2.5 rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 transition-all text-sm"
+                  onClick={handleLogout}
                 >
-                  🔄 Đồng Bộ Cloud Ngay
+                  🚪 Đăng Xuất Khỏi Tài Khoản
                 </button>
-                <button type="button" className="auth-logout-btn" onClick={handleLogout}>
-                  Đăng Xuất
+
+                <button
+                  type="button"
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl cursor-pointer text-xs transition-colors"
+                  onClick={onClose}
+                >
+                  🐾 Tiếp Tục Chơi Ngay
                 </button>
               </div>
             </div>
           ) : (
+            /* NẾU CHƯA ĐĂNG NHẬP: HIỂN THỊ TAB TẠO MỚI / ĐĂNG NHẬP */
             <>
               {/* Tab Selector */}
               <div className="auth-tabs-row">
@@ -198,9 +289,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     soundManager.playPop();
                     setTab('register');
                     setErrorMessage(null);
+                    setSuccessMessage(null);
                   }}
                 >
-                   Tạo Tài Khoản Mới
+                  📝 Tạo Mới
                 </button>
                 <button
                   type="button"
@@ -209,6 +301,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     soundManager.playPop();
                     setTab('login');
                     setErrorMessage(null);
+                    setSuccessMessage(null);
                   }}
                 >
                   🔑 Đăng Nhập
@@ -217,7 +310,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               {/* Saved accounts chip picker on login tab */}
               {tab === 'login' && savedAccounts.length > 0 && (
-                <div className="p-2 bg-orange-50/90 border border-orange-200 rounded-xl text-left">
+                <div className="p-2 bg-orange-50/90 border border-orange-200 rounded-xl text-left mb-2">
                   <span className="text-[11px] font-bold text-orange-800 uppercase tracking-wide block mb-1">
                     🐱 Tài khoản trên máy:
                   </span>
@@ -243,13 +336,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* Form Input Container */}
               <form onSubmit={tab === 'register' ? handleSimpleRegister : handleSimpleLogin} className="auth-form">
                 <div className="form-group">
-                  <label>Tên Tài Khoản</label>
+                  <label>Tên Tài Khoản (Username)</label>
                   <input
                     type="text"
                     className="auth-input"
                     placeholder="vd: meobap, senmeo123..."
                     value={username}
                     onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
                     autoCapitalize="none"
                     autoCorrect="off"
                     required
@@ -258,13 +353,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                 {tab === 'register' && (
                   <div className="form-group">
-                    <label>Tên Mèo Cưng / Biệt Danh</label>
+                    <label>Tên Mèo Cưng Của Bạn</label>
                     <input
                       type="text"
                       className="auth-input"
                       placeholder="vd: Hoàng Thượng Múp, Bánh Bao..."
                       value={catName}
                       onChange={(e) => setCatName(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
                     />
                   </div>
                 )}
@@ -286,6 +383,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     placeholder="Tối thiểu 4 ký tự..."
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
                     required
                   />
                 </div>
@@ -297,13 +396,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   {isLoading
                     ? 'Đang xử lý...'
                     : tab === 'register'
-                    ? ' Tạo Tài Khoản & Vào Chơi'
+                    ? '✨ Tạo Tài Khoản & Vào Chơi'
                     : '🚀 Đăng Nhập & Vào Chơi'}
                 </button>
               </form>
 
               {/* Bottom Quick Guest Action Bar */}
-              <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between gap-2 text-xs">
+              <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between gap-2 text-xs mt-2">
                 <span className="text-gray-500">
                   {tab === 'register' ? 'Chưa muốn đăng ký?' : 'Chưa có tài khoản?'}
                 </span>
@@ -325,7 +424,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       setTab('register');
                     }}
                   >
-                     Tạo tài khoản mới
+                    ✨ Tạo tài khoản mới
                   </button>
                 )}
               </div>
@@ -336,3 +435,5 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     </div>
   );
 };
+
+export default AuthModal;

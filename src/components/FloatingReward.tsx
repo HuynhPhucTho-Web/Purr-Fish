@@ -11,6 +11,7 @@ interface FloatingRewardProps {
   onCatchGoldenFish: (bonus: number) => void;
   onClaimOffline: () => void;
   clickPower: number;
+  isCatRoomActive?: boolean;
 }
 
 export const FloatingReward: React.FC<FloatingRewardProps> = ({
@@ -22,6 +23,7 @@ export const FloatingReward: React.FC<FloatingRewardProps> = ({
   onCatchGoldenFish,
   onClaimOffline,
   clickPower,
+  isCatRoomActive = true,
 }) => {
   // Golden Fish State
   const [goldenFishActive, setGoldenFishActive] = useState(false);
@@ -32,34 +34,47 @@ export const FloatingReward: React.FC<FloatingRewardProps> = ({
   });
 
   const goldenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleNextFishRef = useRef<() => void>(() => {});
 
-  // Spawn Golden Fish periodically (every 35 - 55 seconds)
+  // Spawn Golden Fish periodically (mỗi 75 - 120 giây, bơi chậm rãi 12 giây)
   useEffect(() => {
     const scheduleNextFish = () => {
-      const delay = 30000 + Math.random() * 25000;
+      if (goldenTimerRef.current) clearTimeout(goldenTimerRef.current);
+      // Khoảng cách xuất hiện thưa hơn: 75 đến 120 giây (1.25 - 2 phút một lần)
+      const delay = 75000 + Math.random() * 45000;
       goldenTimerRef.current = setTimeout(() => {
-        // Randomize vertical height (between 15% and 75% of screen)
-        setGoldenFishPos({ y: 15 + Math.random() * 60 });
+        // Randomize vertical height (between 18% and 72% of screen)
+        setGoldenFishPos({ y: 18 + Math.random() * 54 });
         setGoldenFishActive(true);
 
-        // Hide after 9 seconds if not caught
-        setTimeout(() => {
+        // Bơi thong thả qua màn hình trong 12.5 giây để người chơi trên điện thoại dễ bắt
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = setTimeout(() => {
           setGoldenFishActive(false);
           scheduleNextFish();
-        }, 9000);
+        }, 12500);
       }, delay);
     };
 
+    scheduleNextFishRef.current = scheduleNextFish;
     scheduleNextFish();
 
     return () => {
       if (goldenTimerRef.current) clearTimeout(goldenTimerRef.current);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
   }, []);
 
   const handleGoldenFishClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setGoldenFishActive(false);
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    // Lên lịch xuất hiện cá vàng tiếp theo sau thời gian chờ
+    scheduleNextFishRef.current();
 
     // Reward: 20x click power or flat 150 fish, whichever is larger!
     const reward = Math.max(2, clickPower * 1);
@@ -113,8 +128,8 @@ export const FloatingReward: React.FC<FloatingRewardProps> = ({
         ))}
       </div>
 
-      {/* 2. Golden Fish Mystery Swimmer */}
-      {goldenFishActive && (
+      {/* 2. Golden Fish Mystery Swimmer (Chỉ hiện ở phòng mèo) */}
+      {goldenFishActive && isCatRoomActive && (
         <div
           className="swimming-golden-fish-wrap"
           style={{ top: `${goldenFishPos.y}%` }}
@@ -142,7 +157,7 @@ export const FloatingReward: React.FC<FloatingRewardProps> = ({
             <span className="toast-sparkle"></span>
             <div className="min-w-0 text-center sm:text-left">
               <h4 className="toast-title truncate sm:text-clip">BẮT ĐƯỢC CÁ VÀNG MAY MẮN!</h4>
-              <p className="toast-amount">+{formatNumber(goldenToast.amount)} Cá 🐟 • KÍCH HOẠT FRENZY!</p>
+              <p className="toast-amount">🎒 +2 Cá Vàng vào Túi Balo • +{formatNumber(goldenToast.amount)} Xu 🪙 • FRENZY!</p>
             </div>
             <span className="toast-sparkle"></span>
           </div>

@@ -1,4 +1,4 @@
-export type FashionCategory = 'hats' | 'clothes' | 'bowls' | 'balls' | 'rugs';
+export type FashionCategory = 'hats' | 'clothes' | 'bowls' | 'balls' | 'rugs' | 'rooms';
 
 export interface FashionDecorItem {
   id: string;
@@ -16,91 +16,189 @@ export interface FashionDecorItem {
 
 export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
   // =========================================================================
-  // 1. MŨ CHO MÈO (HATS)
+  // 1. MŨ CHO MÈO (HATS) - 14 MẪU NÓN THỜI TRANG ĐỘC ĐÁO
   // =========================================================================
   {
-    id: 'hat_straw',
+    id: 'hat_giay_origami',
     category: 'hats',
-    name: 'Mũ Rơm Đi Biển',
-    icon: '👒',
-    price: 150,
-    badge: 'Mát Mẻ',
-    description: 'Mũ cói vành rộng gắn dải ruy băng xanh mát, che chắn cho Boss khi đi câu.',
-    perk: '+5% Tỷ lệ gặp cá to',
-    color: '#F59E0B',
-    accentColor: '#FEF3C7',
+    name: 'Mũ Giấy Origami',
+    icon: '⛵',
+    image: '/images/hat_webp/mu_giay_origami.png',
+    price: 8000,
+    badge: 'Tuổi Thơ',
+    description: 'Chiếc mũ gấp thuyền giấy origami trắng tinh khôi phong cách Nhật Bản, mộc mạc và hoài niệm tuổi thơ.',
+    perk: '+3% Tốc độ tự bắt cá',
+    color: '#64748B',
+    accentColor: '#F8FAFC',
   },
   {
-    id: 'hat_wizard',
+    id: 'hat_cau_ca_xanh',
     category: 'hats',
-    name: 'Mũ Phù Thủy Mini',
+    name: 'Mũ Câu Cá Xanh',
+    icon: '🎣',
+    image: '/images/hat_webp/mu_cau_ca_xanh.png',
+    price: 15000,
+    badge: 'Cần Thủ',
+    description: 'Mũ tai bèo màu xanh rêu khoét tai mèo ngộ nghĩnh có in hình dấu chân, chuẩn phong cách cần thủ mèo.',
+    perk: '+5% Tỷ lệ gặp cá to',
+    color: '#4D7C0F',
+    accentColor: '#ECFDF5',
+  },
+  {
+    id: 'hat_rong_vanh',
+    category: 'hats',
+    name: 'Mũ Rộng Vành',
+    icon: '👒',
+    image: '/images/hat_webp/mu_rong_vanh.webp',
+    price: 18000,
+    badge: 'Mát Mẻ',
+    description: 'Mũ rơm cói đan rộng vành che nắng đính dải ruy băng đỏ thắm và đóa cúc trắng dịu dàng cho Boss dạo mát.',
+    perk: '+6% Tỷ lệ cá cắn câu',
+    color: '#F59E0B',
+    accentColor: '#FEF9C3',
+  },
+  {
+    id: 'hat_len_xam',
+    category: 'hats',
+    name: 'Mũ Len Xám',
+    icon: '🧶',
+    image: '/images/hat_webp/mu_len_xam.webp',
+    price: 22000,
+    badge: 'Ấm Áp',
+    description: 'Mũ len đan dệt kim màu xám bo tròn ấm áp, ôm trọn đôi tai giúp Boss giữ ấm trong những ngày se lạnh.',
+    perk: 'Giảm 10% tốc độ đói khát',
+    color: '#6B7280',
+    accentColor: '#F3F4F6',
+  },
+  {
+    id: 'hat_dau_bep',
+    category: 'hats',
+    name: 'Mũ Đầu Bếp',
+    icon: '👨‍🍳',
+    image: '/images/hat_webp/mu_dau_bep.webp',
+    price: 26000,
+    badge: 'Bếp Trưởng',
+    description: 'Mũ xếp ly trắng tinh khôi của bếp trưởng tài hoa in dấu chân hồng, sẵn sàng trổ tài chế biến tiệc cá thịnh soạn.',
+    perk: '+8% Độ no từ mọi món ăn',
+    color: '#FB7185',
+    accentColor: '#FFF1F2',
+  },
+  {
+    id: 'hat_luoi_trai_do_xanh',
+    category: 'hats',
+    name: 'Mũ Lưỡi Trai Đỏ Xanh',
+    icon: '🧢',
+    image: '/images/hat_webp/mu_luoi_trai_do_xanh.webp',
+    price: 28000,
+    badge: 'Năng Động',
+    description: 'Nón kết lưỡi trai phối màu đỏ và xanh dương phong cách thể thao khỏe khoắn, tràn đầy nhiệt huyết năng động.',
+    perk: '+8% Tốc độ ra dây câu',
+    color: '#2563EB',
+    accentColor: '#EFF6FF',
+  },
+  {
+    id: 'hat_meo_dua_hau',
+    category: 'hats',
+    name: 'Mũ Mèo Dưa Hấu',
+    icon: '🍉',
+    image: '/images/hat_webp/mu_meo_dua_hau.webp',
+    price: 35000,
+    badge: 'Mát Lạnh',
+    description: 'Mũ trùm đầu hình quả dưa hấu sọc xanh mát rượi độc lạ, biến Boss thành trái dưa hấu ngọt ngào siêu dễ thương.',
+    perk: '+10% Tỷ lệ xuất hiện cá đặc biệt',
+    color: '#16A34A',
+    accentColor: '#DCFCE7',
+  },
+  {
+    id: 'hat_phu_thuy',
+    category: 'hats',
+    name: 'Mũ Phù Thủy',
     icon: '🧙',
-    price: 320,
+    image: '/images/hat_webp/mu_phu_thuy.webp',
+    price: 42000,
     badge: 'Ma Thuật',
-    description: 'Mũ chóp tím lấp lánh sao vàng mang lại linh cảm huyền bí khi săn cá.',
-    perk: '+8% Điểm kinh nghiệm (XP)',
+    description: 'Mũ chóp tím huyền bí thắt nơ cam có khóa vàng, trên đỉnh gắn ngôi sao lấp lánh mang lại ma lực huyền bí.',
+    perk: '+10% Điểm kinh nghiệm (XP)',
     color: '#8B5CF6',
     accentColor: '#EDE9FE',
   },
   {
-    id: 'hat_warm_beanie',
+    id: 'hat_ong_gia_noel',
     category: 'hats',
-    name: 'Mũ Len Mùa Đông',
-    icon: '🧶',
-    price: 280,
-    badge: 'Ấm Áp',
-    description: 'Mũ len đan tay có quả bông tròn trên đỉnh, giữ ấm đôi tai xinh xắn.',
-    perk: 'Giảm 10% tốc độ đói',
-    color: '#EC4899',
-    accentColor: '#FCE7F3',
+    name: 'Mũ Ông Già Noel',
+    icon: '🎅',
+    image: '/images/hat_webp/mu_ong_gia_noel.png',
+    price: 50000,
+    badge: 'Giáng Sinh',
+    description: 'Mũ nhung đỏ viền lông tuyết trắng bồng bềnh gắn đôi chuông vàng leng keng, ngập tràn không khí lễ hội Giáng Sinh.',
+    perk: '+12% Quà xu may mắn rơi ra',
+    color: '#DC2626',
+    accentColor: '#FEE2E2',
   },
   {
-    id: 'hat_pirate',
+    id: 'hat_hai_tac',
     category: 'hats',
-    name: 'Mũ Hải Tặc Biển Sâu',
+    name: 'Mũ Hải Tặc',
     icon: '🏴‍☠️',
-    price: 550,
-    badge: 'Bá Đạo',
-    description: 'Mũ thuyền trưởng tam giác kiêu hãnh thống trị mọi vùng biển hồ.',
+    image: '/images/hat_webp/mu_hai_tac.png',
+    price: 55000,
+    badge: 'Thuyền Trưởng',
+    description: 'Mũ thuyền trưởng hải tặc đen viền vàng kiêu hãnh với huy hiệu đầu lâu và lông vũ đỏ rực rỡ.',
     perk: '+12% Xu nhận được khi bán cá',
     color: '#1F2937',
     accentColor: '#F3F4F6',
   },
   {
-    id: 'hat_crown',
+    id: 'hat_tham_tu_karro',
+    category: 'hats',
+    name: 'Mũ Thám Tử Caro',
+    icon: '🕵️',
+    image: '/images/hat_webp/mu_tham_tu_karro.webp',
+    price: 62000,
+    badge: 'Thám Tử',
+    description: 'Mũ dạ kẻ caro nâu hai đầu thắt nơ phong cách thám tử Sherlock Holmes, tăng giác quan săn tìm cá hiếm.',
+    perk: '+14% Tỷ lệ phát hiện cá Rất Hiếm',
+    color: '#92400E',
+    accentColor: '#FEF3C7',
+  },
+  {
+    id: 'hat_top_hat',
+    category: 'hats',
+    name: 'Mũ Top Hat',
+    icon: '🎩',
+    image: '/images/hat_webp/mu_top_hat.png',
+    price: 75000,
+    badge: 'Quý Tộc',
+    description: 'Mũ chóp cao màu đen sang trọng quấn ruy băng đỏ satin, phong thái quý ông thượng lưu bậc nhất sảnh phòng.',
+    perk: '+16% Xu nhận được khi bán cá',
+    color: '#1E293B',
+    accentColor: '#F1F5F9',
+  },
+  {
+    id: 'hat_vuong_mien',
+    category: 'hats',
+    name: 'Mũ Vương Miện',
+    icon: '👑',
+    image: '/images/hat_webp/mu_vuong_mien.webp',
+    price: 550000,
+    badge: 'Vương Giả',
+    description: 'Vương miện vàng nạm hồng ngọc và lam ngọc lộng lẫy đặt trên đệm nhung đỏ quyền quý, khẳng định khí chất vương giả.',
+    perk: '+18% Lực vuốt ve Click Power',
+    color: '#F59E0B',
+    accentColor: '#FEF3C7',
+  },
+  {
+    id: 'hat_vuong_mien_hoang_gia',
     category: 'hats',
     name: 'Vương Miện Hoàng Gia',
     icon: '👑',
-    price: 1200,
-    badge: 'VIP',
-    description: 'Vương miện vàng nạm hồng ngọc quý giá, khẳng định uy quyền Boss Mèo.',
-    perk: '+20% Lực vuốt ve Click Power',
-    color: '#EAB308',
+    image: '/images/hat_webp/vuong_mien_hoang_gia.webp',
+    price: 1500000,
+    badge: 'Đế Vương',
+    description: 'Tuyệt phẩm vương miện hoàng gia tối cao đính thánh giá và viền lông ermine quý tộc, biểu tượng đỉnh cao của bậc đế vương.',
+    perk: '+25% Tất cả chỉ số và hiệu quả câu',
+    color: '#D97706',
     accentColor: '#FEF08A',
-  },
-  {
-    id: 'hat_frog',
-    category: 'hats',
-    name: 'Mũ Ếch Con Kawaii',
-    icon: '🐸',
-    price: 220,
-    badge: 'Ngộ Nghĩnh',
-    description: 'Mũ xanh hai mắt ếch lồi siêu dễ thương khiến ai nhìn cũng tan chảy.',
-    perk: '+6% Combo thần tốc',
-    color: '#10B981',
-    accentColor: '#D1FAE5',
-  },
-  {
-    id: 'hat_party',
-    category: 'hats',
-    name: 'Mũ Chóp Sinh Nhật',
-    icon: '🥳',
-    price: 100,
-    badge: 'Tiệc Tùng',
-    description: 'Nón chóp họa tiết chấm bi sặc sỡ cho những buổi tiệc cá linh đình.',
-    perk: '+3% Tốc độ tự bắt cá',
-    color: '#F43F5E',
-    accentColor: '#FFE4E6',
   },
 
   // =========================================================================
@@ -201,7 +299,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Cánh Hoa Hồng Pastel',
     icon: '🌸',
     image: '/images/bat_an_cho_meo_webp/bat-canh-hoa-hong.webp',
-    price: 120,
+    price: 500,
     badge: 'Dịu Dàng',
     description: 'Bát ăn tạo hình cánh hoa hồng nữ tính, giúp bữa ăn của Boss thêm thi vị.',
     perk: '+4% Điểm No khi cho Boss ăn',
@@ -214,7 +312,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Sứ Hồng Tối Giản',
     icon: '🥣',
     image: '/images/bat_an_cho_meo_webp/bat-hong.webp',
-    price: 160,
+    price: 1500,
     badge: 'Thanh Nhã',
     description: 'Bát tròn tráng men hồng bóng loáng, thiết kế bo tròn công thái học dễ liếm sạch thức ăn.',
     perk: '+5% Điểm No khi ăn hạt',
@@ -227,7 +325,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Đôi Tím Pastel Ngọt Ngào',
     icon: '🥣',
     image: '/images/bat_an_cho_meo_webp/bat-doi-tim.webp',
-    price: 200,
+    price: 2500,
     badge: 'Tiện Lợi',
     description: 'Bát đôi 2 ngăn màu tím mộng mơ, vừa đựng thức ăn khô vừa đựng pate thơm lừng.',
     perk: '+5% Điểm No và Nước uống',
@@ -240,7 +338,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Inox Chống Trượt Bền Bỉ',
     icon: '🥈',
     image: '/images/bat_an_cho_meo_webp/bat-inox.webp',
-    price: 240,
+    price: 5000,
     badge: 'Bền Bỉ',
     description: 'Bát inox không gỉ sáng bóng kèm đế chống trượt khi Boss cắm đầu chén nhiệt tình.',
     perk: '+6% Hiệu quả hấp thụ dinh dưỡng',
@@ -253,7 +351,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Cá Hồng Dâu Tây',
     icon: '🐟',
     image: '/images/bat_an_cho_meo_webp/bat-hinh-ca-hong.webp',
-    price: 280,
+    price: 10000,
     badge: 'Ngọt Ngào',
     description: 'Bát ăn tạo hình chú cá màu hồng kẹo ngọt, khiến Boss thích thú ăn hết sạch sẽ.',
     perk: '+6% Hồi phục năng lượng khi ăn',
@@ -266,7 +364,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Sứ Biển Xanh Sâu Lắng',
     icon: '🌊',
     image: '/images/bat_an_cho_meo_webp/bat-xanh-duong.webp',
-    price: 320,
+    price: 15000,
     badge: 'Bình Yên',
     description: 'Bát gốm màu xanh đại dương sâu thẳm, khơi gợi cảm giác thèm các món cá tươi thơm ngon.',
     perk: '+7% Tốc độ tự bắt cá sau khi ăn',
@@ -279,7 +377,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Tai Mèo Vàng Nắng',
     icon: '🐱',
     image: '/images/bat_an_cho_meo_webp/bat-tai-meo-vang.webp',
-    price: 380,
+    price: 30000,
     badge: 'Rực Rỡ',
     description: 'Bát có đôi tai mèo nhô cao màu vàng chanh ấm áp, mang lại sinh khí tươi vui cho sảnh.',
     perk: '+7% Tỷ lệ x2 điểm no ngẫu nhiên',
@@ -292,7 +390,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Tai Mèo Xanh Bạc Hà',
     icon: '🐱',
     image: '/images/bat_an_cho_meo_webp/bat-tai-meo-xanh.webp',
-    price: 380,
+    price: 40000,
     badge: 'Mát Lạnh',
     description: 'Bát tai mèo màu xanh mint giải nhiệt sảng khoái, đựng nước hay đồ ăn đều trong lành.',
     perk: '+7% Giữ độ tươi thức ăn lâu hơn',
@@ -305,7 +403,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Sứ Họa Tiết Đàn Cá',
     icon: '🐠',
     image: '/images/bat_an_cho_meo_webp/bat-hoa-tiet-ca.webp',
-    price: 450,
+    price: 50000,
     badge: 'Sinh Động',
     description: 'Bát sứ vẽ hình những chú cá nhỏ bơi lội tung tăng kích thích vị giác của mèo cưng.',
     perk: '+8% Điểm kinh nghiệm (XP)',
@@ -318,7 +416,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Mèo Đính Nơ Hồng Điệu Đà',
     icon: '🎀',
     image: '/images/bat_an_cho_meo_webp/bat-meo-no-hong.webp',
-    price: 520,
+    price: 65000,
     badge: 'Tiểu Thư',
     description: 'Bát hình mặt mèo thắt nơ hồng xinh xắn dành riêng cho các nàng công chúa bốn chân.',
     perk: '+8% Điểm thân thiết & vuốt ve',
@@ -331,7 +429,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bộ Bát Đôi Sứ Khay Gỗ Thông',
     icon: '🍲',
     image: '/images/bat_an_cho_meo_webp/bo-bat-doi-de-go.webp',
-    price: 600,
+    price: 70000,
     badge: 'Hoàn Hảo',
     description: 'Bộ 2 bát sứ đặt trên khay gỗ thông mộc tinh tế, một bên đựng cá một bên đựng súp.',
     perk: '+10% Hiệu quả cả Thức Ăn & Nước',
@@ -344,7 +442,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Men Xanh Chân Gỗ Chống Gù',
     icon: '🎍',
     image: '/images/bat_an_cho_meo_webp/bat-men-xanh-ke-chan-go.webp',
-    price: 720,
+    price: 60000,
     badge: 'Bảo Vệ Cổ',
     description: 'Bát gốm men xanh ngọc đặt trên giá gỗ nghiêng 15 độ bảo vệ cột sống cổ cho mèo khi ăn.',
     perk: '+10% Sức khỏe tổng thể',
@@ -357,7 +455,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Đĩa Gốm Cá Xanh Nguyên Bản',
     icon: '🐟',
     image: '/images/bat_an_cho_meo_webp/dia-ca-xanh.webp',
-    price: 850,
+    price: 85000,
     badge: 'Nghệ Thuật',
     description: 'Đĩa gốm mộc tạo hình cá dài màu xanh biển, chuyên dùng bày cá hồi và cá nướng hảo hạng.',
     perk: '+12% Thu nhập cá từ hồ',
@@ -370,7 +468,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Trăng Khuyết & Muôn Sao',
     icon: '🌙',
     image: '/images/bat_an_cho_meo_webp/bat-trang-tri-trang-sao.webp',
-    price: 980,
+    price: 90000,
     badge: 'Huyền Bí',
     description: 'Bát men xanh tím ánh sao đêm lung linh, mang lại giấc mơ ngọt ngào sau mỗi bữa tiệc cá.',
     perk: '+12% Hồi phục nhanh khi ngủ',
@@ -383,7 +481,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Vỏ Sò Ngọc Trai Đại Dương',
     icon: '🦪',
     image: '/images/bat_an_cho_meo_webp/bat-so-ngoc-trai.webp',
-    price: 1200,
+    price: 120000,
     badge: 'Đại Dương',
     description: 'Bát tạo hình vỏ sò xà cừ óng ánh từ đáy biển sâu, mỗi bữa ăn là một chuyến phiêu lưu.',
     perk: '+15% Nhận Xu may mắn khi ăn',
@@ -396,7 +494,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Tô Thủy Tinh Chân Kiềng Vàng',
     icon: '✨',
     image: '/images/bat_an_cho_meo_webp/bat-thuy-tinh-chan-vang.webp',
-    price: 1500,
+    price: 500000,
     badge: 'Xa Hoa',
     description: 'Tô thủy tinh pha lê trong suốt đặt trên kiềng mạ vàng tinh xảo chuẩn nhà hàng 5 sao.',
     perk: '+16% Tỷ lệ nhân đôi điểm no',
@@ -409,7 +507,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Vương Miện Xanh Ngọc Bích',
     icon: '👑',
     image: '/images/bat_an_cho_meo_webp/bat-vuong-mien-xanh-ngoc.webp',
-    price: 1850,
+    price: 165000,
     badge: 'Vương Giả',
     description: 'Bát tạo hình vương miện đính đá xanh ngọc bích lộng lẫy, khẳng định uy quyền của Boss.',
     perk: '+18% XP & Tốc độ kéo cần',
@@ -422,7 +520,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bát Hoàng Gia Đen Dát Vàng 24K',
     icon: '👑',
     image: '/images/bat_an_cho_meo_webp/bat-hoang-gia-den-vang.webp',
-    price: 2400,
+    price: 240000,
     badge: 'Quyền Quý',
     description: 'Bát men đen tuyền quyền lực viền hoa văn vàng kim tôn vinh đẳng cấp đế vương tối cao.',
     perk: '+22% Toàn bộ XP & Xu thưởng khi ăn',
@@ -435,7 +533,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Đĩa Hoa Vương Miện Hoàng Gia',
     icon: '🪷',
     image: '/images/bat_an_cho_meo_webp/dia-hoa-vuong-mien.png',
-    price: 3000,
+    price: 90000,
     badge: 'Tuyệt Phẩm',
     description: 'Đĩa ăn hình đóa hoa nở rộ viền vương miện hoàng gia, kiệt tác mỹ thực cho Boss mèo.',
     perk: '+25% Tăng mạnh mọi chỉ số khi chén cá',
@@ -465,7 +563,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Bộ 3 Cuộn Len Ngũ Sắc',
     icon: '🧶',
     image: '/images/do_choi_webp/3_len.webp',
-    price: 120,
+    price: 1500,
     badge: 'Sặc Sỡ',
     description: 'Bộ ba cuộn len nhiều màu sắc mềm mại cho mèo cưng tha hồ lăn qua lăn lại.',
     perk: '+4% Xu rơi ra khi vờn banh',
@@ -478,7 +576,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Cá Nhựa Vẫy Đuôi Tinh Nghịch',
     icon: '🐟',
     image: '/images/do_choi_webp/ca_nhua.webp',
-    price: 180,
+    price: 2000,
     badge: 'Tinh Nghịch',
     description: 'Chú cá nhựa bơi quẫy đuôi linh hoạt kích thích bản năng rình mồi của Boss.',
     perk: '+5% Tốc độ ra cần câu',
@@ -491,7 +589,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Cá Nhồi Bông Cỏ Mèo Catnip',
     icon: '🐠',
     image: '/images/do_choi_webp/ca.webp',
-    price: 240,
+    price: 2400,
     badge: 'Say Mê',
     description: 'Cá nhồi bông tẩm cỏ mèo thơm lừng khiến Boss ôm chặt không rời.',
     perk: '+5% Tỷ lệ câu cá to',
@@ -504,7 +602,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Cầu Thang Cào Móng Gỗ',
     icon: '🪜',
     image: '/images/do_choi_webp/cau_thang.webp',
-    price: 300,
+    price: 5000,
     badge: 'Vận Động',
     description: 'Bậc cầu thang gỗ bọc thừng sisal cho mèo leo trèo và mài móng mỗi ngày.',
     perk: '+6% Lực kéo cá',
@@ -514,12 +612,12 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
   {
     id: 'ball_chuot_cot',
     category: 'balls',
-    name: 'Chuột Treo Lò Xo Nảy Bật',
+    name: 'Chuột chạy cốt lò xo nhún nhảy',
     icon: '🐭',
     image: '/images/do_choi_webp/chuot_cot.webp',
-    price: 360,
+    price: 8000,
     badge: 'Phản Xạ',
-    description: 'Chú chuột bông gắn đầu lò xo nhấp nhô liên tục thách thức phản xạ chớp nhoáng.',
+    description: 'Chuột chạy cốt lò xo nhún nhảy, kích thích phản xạ nhanh nhạy của mèo.',
     perk: '+6% Tốc độ vuốt ve',
     color: '#8B5CF6',
     accentColor: '#EDE9FE',
@@ -527,12 +625,12 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
   {
     id: 'ball_chuot',
     category: 'balls',
-    name: 'Chuột Chạy Cót Siêu Tốc',
+    name: 'Chuột nhồi Bông Cỏ Mèo Catnip',
     icon: '🐁',
     image: '/images/do_choi_webp/chuot.webp',
-    price: 420,
+    price: 15000,
     badge: 'Săn Mồi',
-    description: 'Chuột cót chạy rượt đuổi vòng quanh phòng cho Boss những pha rượt bắt ngoạn mục.',
+    description: 'Chuột nhồi bông tẩm cỏ mèo thơm lừng khiến Boss ôm chặt không rời.',
     perk: '+7% Tỷ lệ cá hiếm trong hồ',
     color: '#6B7280',
     accentColor: '#F3F4F6',
@@ -543,7 +641,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Dây Thừng Gai Cắn Gặm',
     icon: '🪢',
     image: '/images/do_choi_webp/day_thung.webp',
-    price: 480,
+    price: 5000,
     badge: 'Bền Chắc',
     description: 'Dây thừng dệt sợi tự nhiên chắc chắn giúp Boss thỏa sức cắn kéo xả stress.',
     perk: '+7% Sức bền của cần câu',
@@ -556,7 +654,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Gậy Vẫy Mèo Lông Vũ Ngũ Sắc',
     icon: '🪶',
     image: '/images/do_choi_webp/gay_meo.webp',
-    price: 550,
+    price: 18000,
     badge: 'Hưng Phấn',
     description: 'Cần vẫy gắn chuông và chùm lông vũ lượn sóng kích hoạt trạng thái săn mồi đỉnh cao.',
     perk: '+8% Combo thần tốc',
@@ -569,7 +667,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Gối Ôm Mèo Cưng Êm Ái',
     icon: '🛋️',
     image: '/images/do_choi_webp/goi_meo.webp',
-    price: 620,
+    price: 20000,
     badge: 'Thư Giãn',
     description: 'Chiếc gối ôm nhung hình mèo mềm như mây cho Boss tựa đầu ngủ say sưa.',
     perk: '+8% Hồi phục năng lượng',
@@ -582,7 +680,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Hộp Cát Vui Nhộn Cho Mèo',
     icon: '📦',
     image: '/images/do_choi_webp/ho_cat.webp',
-    price: 700,
+    price: 22000,
     badge: 'Tiện Nghi',
     description: 'Hộp cát sinh thái riêng tư cho mèo cưng luôn sạch sẽ thơm tho mỗi ngày.',
     perk: '+9% Sạch sẽ & thoải mái',
@@ -595,7 +693,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Lật Đật Chuông Lắc Vui Nhộn',
     icon: '🎎',
     image: '/images/do_choi_webp/lat_dat.webp',
-    price: 780,
+    price: 25000,
     badge: 'Không Ngã',
     description: 'Lật đật hình mèo lắc lư không bao giờ ngã, phát tiếng chuông boing boing ngộ nghĩnh.',
     perk: '+9% May mắn khi câu cá',
@@ -608,7 +706,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Lều Vải Cắm Trại Riêng Tư',
     icon: '⛺',
     image: '/images/do_choi_webp/lieu.webp',
-    price: 860,
+    price: 30000,
     badge: 'Ấm Cúng',
     description: 'Lều vải phong cách Boho xinh xắn làm nơi trú ẩn bình yên của Boss cưng.',
     perk: '+10% XP kinh nghiệm mỗi giây',
@@ -621,7 +719,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Ống Lò Xo Búng Nhảy Tưng Bừng',
     icon: '🌀',
     image: '/images/do_choi_webp/lo_xo.webp',
-    price: 950,
+    price: 35000,
     badge: 'Năng Động',
     description: 'Ống lò xo đàn hồi cao, chỉ cần khều nhẹ là bay vút nảy tưng khắp phòng.',
     perk: '+10% Lực nảy và rơi xu',
@@ -634,7 +732,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Quả Cầu Lục Lạc Leng Keng',
     icon: '🔔',
     image: '/images/do_choi_webp/luc_lac.webp',
-    price: 1050,
+    price: 40000,
     badge: 'Vui Tai',
     description: 'Quả cầu đan mây bên trong có chuông đồng reo vang mỗi khi lăn trên sàn.',
     perk: '+12% Xu thưởng khi chạm vào',
@@ -647,7 +745,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Lược Chải Lông Massage Mềm',
     icon: '🪮',
     image: '/images/do_choi_webp/luoc.webp',
-    price: 1150,
+    price: 30000,
     badge: 'Chăm Sóc',
     description: 'Lược massage răng silicon giúp gỡ lông rối và mang lại cảm giác phê tột đỉnh.',
     perk: '+12% Điểm thân thiết vuốt ve',
@@ -660,7 +758,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Đài Nước Tuần Hoàn Suối Mát',
     icon: '⛲',
     image: '/images/do_choi_webp/man_uong_nuoc.webp',
-    price: 1300,
+    price: 50000,
     badge: 'Tươi Mát',
     description: 'Đài phun nước lọc tuần hoàn với dòng nước róc rách trong veo mát lạnh.',
     perk: '+14% Tự động hồi phục nước',
@@ -673,7 +771,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Mê Cung Bi Tròn Thông Minh',
     icon: '🧩',
     image: '/images/do_choi_webp/me_cung_bi.webp',
-    price: 1450,
+    price: 60000,
     badge: 'Trí Tuệ',
     description: 'Bàn mê cung rãnh tròn chứa các viên bi lăn giúp Boss rèn luyện trí thông minh.',
     perk: '+15% Tỷ lệ x2 xu khi click',
@@ -686,7 +784,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Đường Hầm Ống Nhựa Khám Phá',
     icon: '🚇',
     image: '/images/do_choi_webp/ong_nhua.webp',
-    price: 1600,
+    price: 60000,
     badge: 'Phiêu Lưu',
     description: 'Đường hầm gấp gọn với nhiều cửa sổ thông gió cho mèo chui luồn thoắt ẩn thoắt hiện.',
     perk: '+16% Tốc độ bắt cá tự động',
@@ -699,7 +797,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Tháp Bóng 3 Tầng Xoay Tròn',
     icon: '🎡',
     image: '/images/do_choi_webp/thap_banh.webp',
-    price: 1800,
+    price: 90000,
     badge: 'Cuốn Hút',
     description: 'Tháp bóng nhiều tầng với các quả bóng quay tít không bao giờ văng ra ngoài.',
     perk: '+18% XP & Xu toàn diện',
@@ -712,7 +810,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Trái Cầu Lông Vũ Bay Nhẹ',
     icon: '🏸',
     image: '/images/do_choi_webp/trai_cau.webp',
-    price: 2000,
+    price: 80000,
     badge: 'Khinh Khí',
     description: 'Trái cầu lông vũ bồng bềnh rơi chậm trong không trung cho mèo tung cú bật nhảy bắt gọn.',
     perk: '+20% Nhẹ nhàng bay bổng',
@@ -725,7 +823,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Trống Lắc Âm Thanh Vui Nhộn',
     icon: '🥁',
     image: '/images/do_choi_webp/trong.webp',
-    price: 2250,
+    price: 150000,
     badge: 'Sôi Động',
     description: 'Chiếc trống lắc mini phát ra âm điệu rộn ràng tưng bừng mỗi lần mèo cào đập.',
     perk: '+22% Bùng nổ điểm thưởng',
@@ -738,7 +836,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Xe Kéo Gỗ Mini Chở Đồ Chơi',
     icon: '🛒',
     image: '/images/do_choi_webp/xe_go.webp',
-    price: 2500,
+    price: 125000,
     badge: 'Cổ Điển',
     description: 'Xe kéo gỗ 4 bánh mộc mạc xinh xắn chở đầy kho báu đồ chơi yêu thích của mèo.',
     perk: '+24% Sức chứa giỏ cá',
@@ -751,7 +849,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Xúc Xắc May Mắn Đổ Xu Vàng',
     icon: '🎲',
     image: '/images/do_choi_webp/xuc_sac.webp',
-    price: 2800,
+    price: 200000,
     badge: 'Vận May',
     description: 'Xúc xắc xốp 6 mặt thần kỳ, mỗi lần lăn là một cơ hội trúng bão xu vàng rực rỡ.',
     perk: '+26% Tỷ lệ nổ hũ siêu may mắn',
@@ -764,7 +862,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Khúc Xương Gặm Êm Răng',
     icon: '🦴',
     image: '/images/do_choi_webp/xuong.webp',
-    price: 3200,
+    price: 190000,
     badge: 'Vương Giả',
     description: 'Khúc xương gặm cao su thiên nhiên massage nướu sạch răng bảo vệ sức khỏe mèo toàn diện.',
     perk: '+30% Toàn bộ sức mạnh săn cá',
@@ -794,7 +892,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Cói Đan Dấu Chân',
     icon: '🐾',
     image: '/images/tham_cho_meo_webp/02_tham-coi-dan-hinh-chan.png',
-    price: 120,
+    price: 15000,
     badge: 'Mộc Mạc',
     description: 'Thảm cói tự nhiên thoáng khí, in hình dấu chân mèo xinh xắn.',
     perk: '+3% Tốc độ tự bắt cá',
@@ -807,7 +905,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Mặt Mèo Vui Vẻ',
     icon: '😸',
     image: '/images/tham_cho_meo_webp/03_tham-mat-meo.webp',
-    price: 180,
+    price: 2200,
     badge: 'Hài Hước',
     description: 'Thảm tròn in hình khuôn mặt mèo hớn hở, tạo niềm vui mỗi khi Boss bước vào.',
     perk: '+3% Điểm kinh nghiệm (XP)',
@@ -820,7 +918,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Xương Cá Độc Đáo',
     icon: '🐟',
     image: '/images/tham_cho_meo_webp/04_tham-hinh-xuong-ca.webp',
-    price: 240,
+    price: 5000,
     badge: 'Mê Cá',
     description: 'Thảm hình xương cá ngộ nghĩnh, nhắc nhở niềm đam mê săn cá bất tận.',
     perk: '+4% Tỷ lệ gặp cá to',
@@ -833,7 +931,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Đệm Chân Hồng',
     icon: '🐾',
     image: '/images/tham_cho_meo_webp/05_tham-dau-chan-hong.png',
-    price: 300,
+    price: 10000,
     badge: 'Ngọt Ngào',
     description: 'Thảm hình dấu chân mèo với đệm thịt hồng ngọt ngào, siêu êm chân.',
     perk: '+5% Lực vuốt ve Click Power',
@@ -846,7 +944,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Kẻ Caro Hồng',
     icon: '🎀',
     image: '/images/tham_cho_meo_webp/06_tham-ke-hong.webp',
-    price: 360,
+    price: 20000,
     badge: 'Vintage',
     description: 'Thảm họa tiết kẻ caro pastel nhẹ nhàng, tôn thêm vẻ đáng yêu cho căn phòng.',
     perk: 'Giảm 5% tốc độ đói',
@@ -859,7 +957,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Tròn Mèo Ngủ Say',
     icon: '😴',
     image: '/images/tham_cho_meo_webp/07_tham-tron-meo-ngu.png',
-    price: 420,
+    price: 22000,
     badge: 'Bình Yên',
     description: 'Thảm tròn nhung tuyết in hình chú mèo cuộn tròn say giấc nồng.',
     perk: '+5% Xu nhận được khi bán cá',
@@ -872,7 +970,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Xanh Biển Cá Bơi',
     icon: '🌊',
     image: '/images/tham_cho_meo_webp/08_tham-xanh-hinh-ca.webp',
-    price: 480,
+    price: 30000,
     badge: 'Biển Cả',
     description: 'Thảm màu xanh lam dịu mắt với đàn cá nhỏ bơi lội tung tăng.',
     perk: '+6% Tỷ lệ cá hiếm trong hồ',
@@ -885,7 +983,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Hoa Cúc Mặt Trời',
     icon: '🌻',
     image: '/images/tham_cho_meo_webp/09_tham-hoa-cuc.png',
-    price: 540,
+    price: 54000,
     badge: 'Nắng Ấm',
     description: 'Cánh hoa cúc vàng rực rỡ đón nắng, mang lại nguồn năng lượng dồi dào.',
     perk: '+6% Lực click vuốt ve',
@@ -898,7 +996,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Xanh Mèo Con Tinh Nghịch',
     icon: '🐈',
     image: '/images/tham_cho_meo_webp/10_tham-xanh-meo-con.webp',
-    price: 600,
+    price: 60000,
     badge: 'Nhí Nhảnh',
     description: 'Họa tiết bé mèo vươn vai tinh nghịch trên nền xanh mint tươi mát.',
     perk: '+7% Tốc độ tự câu cá',
@@ -911,7 +1009,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Đầu Mèo Cam Cute',
     icon: '🐱',
     image: '/images/tham_cho_meo_webp/11_tham-dau-meo-cam.webp',
-    price: 680,
+    price: 65000,
     badge: 'Rực Rỡ',
     description: 'Thảm hình đầu mèo cam ngộ nghĩnh, chất len bông siêu dày dặn.',
     perk: '+7% Combo thần tốc',
@@ -924,7 +1022,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Cá Hồng Pastel',
     icon: '🐠',
     image: '/images/tham_cho_meo_webp/12_tham-hinh-ca-hong.webp',
-    price: 750,
+    price: 80000,
     badge: 'Dịu Dàng',
     description: 'Thảm cắt hình cá hồng mềm mại, tạo điểm nhấn ngọt ngào cho gian phòng.',
     perk: '+8% Tỷ lệ cá to',
@@ -937,7 +1035,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Xanh Giấc Mộng Đêm',
     icon: '🌙',
     image: '/images/tham_cho_meo_webp/13_tham-xanh-meo-ngu.webp',
-    price: 820,
+    price: 110000,
     badge: 'Mộng Mơ',
     description: 'Thảm xanh sẫm êm đềm như màn đêm, ru Boss vào giấc mơ tràn ngập cá ngon.',
     perk: 'Giảm 8% tốc độ khát nước',
@@ -950,7 +1048,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Tròn Mây Xanh Bồng Bềnh',
     icon: '☁️',
     image: '/images/tham_cho_meo_webp/14_tham-tron-may-xanh.png',
-    price: 900,
+    price: 130000,
     badge: 'Bồng Bềnh',
     description: 'Thảm tròn họa tiết mây bồng bềnh êm ái như nằm trên tầng mây xanh.',
     perk: '+8% Điểm kinh nghiệm (XP)',
@@ -963,7 +1061,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Ren Nơ Hồng Công Chúa',
     icon: '🎀',
     image: '/images/tham_cho_meo_webp/15_tham-ren-no-hong.webp',
-    price: 1000,
+    price: 150000,
     badge: 'Tiểu Thư',
     description: 'Viền ren cầu kỳ kết nơ hồng lộng lẫy, chuẩn phong cách tiểu thư mèo kiêu kỳ.',
     perk: '+10% Lực vuốt ve Click Power',
@@ -976,7 +1074,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Bé Mèo No Say',
     icon: '🍱',
     image: '/images/tham_cho_meo_webp/16_tham-meo-an-ca.webp',
-    price: 1100,
+    price: 155000,
     badge: 'Thực Thần',
     description: 'Bức tranh bé mèo ôm chú cá vàng ngon lành, biểu tượng của sự sung túc.',
     perk: '+10% Hiệu quả thức ăn hồi phục',
@@ -989,7 +1087,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Lông Tuyết Trắng Mịn',
     icon: '❄️',
     image: '/images/tham_cho_meo_webp/17_tham-meo-long-trang.png',
-    price: 1250,
+    price: 200000,
     badge: 'Quý Tộc',
     description: 'Sợi lông trắng mướt mềm mại bậc nhất, nằm lên là cảm nhận sự xa hoa tinh tế.',
     perk: '+12% Xu nhận được khi bán cá',
@@ -1002,7 +1100,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Vườn Xanh Mộng Mơ',
     icon: '🏡',
     image: '/images/tham_cho_meo_webp/18_tham-vuon-xanh-meo-ngu.webp',
-    price: 1400,
+    price: 220000,
     badge: 'Thiên Nhiên',
     description: 'Khung cảnh khu vườn xanh ngát với cỏ cây hoa lá cho Boss hòa mình vào thiên nhiên.',
     perk: '+12% Tốc độ tự bắt cá',
@@ -1015,7 +1113,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Dấu Chân Kim Cương',
     icon: '💎',
     image: '/images/tham_cho_meo_webp/19_tham-dau-chan-vien-vang.webp',
-    price: 1600,
+    price: 230000,
     badge: 'Sang Trọng',
     description: 'Họa tiết dấu chân nạm viền vàng lấp lánh như dát vàng 24k quanh phòng.',
     perk: '+14% Tỷ lệ gặp cá khủng',
@@ -1028,7 +1126,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Trăng Sao Thần Tiên',
     icon: '⭐',
     image: '/images/tham_cho_meo_webp/20_tham-trang-trang-sao.webp',
-    price: 1800,
+    price: 225000,
     badge: 'Huyền Ảo',
     description: 'Trăng khuyết dát bạc cùng các chòm sao lung linh soi sáng mọi giấc ngủ.',
     perk: '+15% Điểm kinh nghiệm (XP)',
@@ -1041,7 +1139,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Giường Hoàng Gia Nệm Hồng',
     icon: '👑',
     image: '/images/tham_cho_meo_webp/21_giuong-meo-hoang-gia-hong.png',
-    price: 2100,
+    price: 250000,
     badge: 'VIP Hoàng Tộc',
     description: 'Chiếc giường nệm bọc nhung hoàng gia mềm mịn, đính viền ren quý phái cho Boss nghỉ ngơi.',
     perk: '+16% Tất cả chỉ số',
@@ -1054,7 +1152,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Tròn Vương Miện Vàng',
     icon: '⚜️',
     image: '/images/tham_cho_meo_webp/22_tham-tron-vuong-mien.png',
-    price: 2400,
+    price: 270000,
     badge: 'Đế Vương',
     description: 'Thảm tròn hoa văn vương miện đế vương, uy nghi tôn vinh địa vị mèo thống soái.',
     perk: '+18% Lực vuốt ve Click Power',
@@ -1067,7 +1165,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Hoàng Gia Nhung Đỏ',
     icon: '🏰',
     image: '/images/tham_cho_meo_webp/23_tham-hoang-gia-do.webp',
-    price: 2800,
+    price: 280000,
     badge: 'Cung Điện',
     description: 'Chất liệu nhung đỏ thẫm cung đình sang trọng bậc nhất, trải thảm đỏ cho Boss sải bước.',
     perk: '+20% Xu nhận được khi bán cá',
@@ -1080,7 +1178,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Đêm Sao Thiên Hà',
     icon: '🌌',
     image: '/images/tham_cho_meo_webp/24_tham-tron-trang-sao-meo.webp',
-    price: 3200,
+    price: 320000,
     badge: 'Vũ Trụ',
     description: 'Dải ngân hà huyền bí thu nhỏ ngay dưới chân, ngắm nhìn vũ trụ bao la cùng Boss.',
     perk: '+22% Tỷ lệ cá thần thoại',
@@ -1093,7 +1191,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Giường Nơ Vương Miện Đẳng Cấp',
     icon: '👑',
     image: '/images/tham_cho_meo_webp/25_giuong-meo-no-vuong-mien.webp',
-    price: 3800,
+    price: 350000,
     badge: 'Tối Thượng',
     description: 'Đỉnh cao nệm giường êm ái hoàng gia gắn vương miện và nơ quý tộc, đặc quyền tối thượng.',
     perk: '+25% Sức mạnh toàn diện cho Boss',
@@ -1106,7 +1204,7 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Đám Mây Trắng Xốp',
     icon: '☁️',
     image: '/images/tham_cho_meo_webp/14_tham-tron-may-xanh.png',
-    price: 260,
+    price: 180000,
     badge: 'Bồng Bềnh',
     description: 'Thảm hình đám mây mềm như bông cho giấc ngủ trưa ngọt ngào.',
     color: '#38BDF8',
@@ -1118,16 +1216,155 @@ export const FASHION_DECOR_CATALOG: FashionDecorItem[] = [
     name: 'Thảm Bàn Chân Mèo Lớn',
     icon: '🐾',
     image: '/images/tham_cho_meo_webp/05_tham-dau-chan-hong.png',
-    price: 500,
+    price: 265000,
     badge: 'Dễ Thương',
     description: 'Thảm lót sàn hình bàn chân mèo khổng lồ với các đệm thịt hồng hào.',
     color: '#F43F5E',
     accentColor: '#FFE4E6',
   },
+
+  // =========================================================================
+  // 6. PHÒNG CHO MÈO (ROOMS) - 10 PHÒNG NỀN BACKGROUND SẢNH CHƠI
+  // =========================================================================
+  {
+    id: 'room_go_co_dien',
+    category: 'rooms',
+    name: 'Phòng Gỗ Cổ Điển',
+    icon: '🏡',
+    image: '/images/rom/phong_meo_go_co_dien.webp',
+    price: 0,
+    badge: 'Khởi Đầu',
+    description: 'Căn phòng gác mái gỗ sồi mộc mạc đón vạt nắng ấm sớm mai, mang lại cảm giác bình yên và ấm cúng cho Boss.',
+    perk: 'Phòng khởi đầu ấm cúng',
+    color: '#D97706',
+    accentColor: '#FEF3C7',
+  },
+  {
+    id: 'room_bien',
+    category: 'rooms',
+    name: 'Phòng Biển Hải Đăng',
+    icon: '🌊',
+    image: '/images/rom/phong_meo_bien.webp',
+    price: 15000,
+    badge: 'Biển Cả',
+    description: 'Cửa sổ tròn ngắm nhìn biển xanh bao la, ngọn hải đăng nhỏ và gió biển lồng lộng mát rượi.',
+    perk: '+5% Tỷ lệ câu được cá to',
+    color: '#0284C7',
+    accentColor: '#E0F2FE',
+  },
+  {
+    id: 'room_co_tich',
+    category: 'rooms',
+    name: 'Phòng Rừng Cổ Tích',
+    icon: '🧚',
+    image: '/images/rom/phong_meo_co_tich.webp',
+    price: 20000,
+    badge: 'Thần Tiên',
+    description: 'Ngôi nhà trên cây phủ dây leo xanh mát với ánh đèn đom đóm lung linh giữa khu rừng cổ tích huyền diệu.',
+    perk: '+6% Tốc độ tự bắt cá',
+    color: '#16A34A',
+    accentColor: '#DCFCE7',
+  },
+  {
+    id: 'room_hien_dai',
+    category: 'rooms',
+    name: 'Phòng Xanh Hiện Đại',
+    icon: '🌿',
+    image: '/images/rom/phong_meo_hien_dai.webp',
+    price: 45000,
+    badge: 'Tiện Nghi',
+    description: 'Căn phòng tone xanh mint hiện đại kết hợp tháp leo trèo gỗ cao cấp, tối ưu không gian vận động cho mèo cưng.',
+    perk: '+8% Lực vuốt ve (Click Power)',
+    color: '#0D9488',
+    accentColor: '#CCFBF1',
+  },
+  {
+    id: 'room_hoa_anh_dao',
+    category: 'rooms',
+    name: 'Phòng Hoa Anh Đào',
+    icon: '🌸',
+    image: '/images/rom/phong_meo_hoa_anh_dao.webp',
+    price: 55000,
+    badge: 'Nhật Bản',
+    description: 'Phòng chiếu tatami truyền thống mở ra khung cảnh vườn hoa anh đào nở rộ rực rỡ dưới nắng xuân thanh bình.',
+    perk: '+10% Điểm kinh nghiệm (XP)',
+    color: '#EC4899',
+    accentColor: '#FCE7F3',
+  },
+  {
+    id: 'room_mua_dong',
+    category: 'rooms',
+    name: 'Phòng Mùa Đông Ấm Áp',
+    icon: '❄️',
+    image: '/images/rom/phong_meo_mua_dong.webp',
+    price: 65000,
+    badge: 'Mùa Đông',
+    description: 'Lò sưởi bập bùng ấm áp đối lập với khung cảnh núi tuyết trắng xóa ngoài ô cửa sổ tai mèo mộng mơ.',
+    perk: 'Giảm 15% tốc độ đói khát',
+    color: '#3B82F6',
+    accentColor: '#EFF6FF',
+  },
+  {
+    id: 'room_nghe_thuat',
+    category: 'rooms',
+    name: 'Phòng Nghệ Thuật Sắc Màu',
+    icon: '🎨',
+    image: '/images/rom/phong_meo_nghe_thuat.webp',
+    price: 80000,
+    badge: 'Hội Họa',
+    description: 'Studio hội họa đầy cảm hứng với giá vẽ, bảng màu rực rỡ và những bức tranh mèo ngộ nghĩnh treo tường.',
+    perk: '+12% Xu nhận được khi bán cá',
+    color: '#F97316',
+    accentColor: '#FFEDD5',
+  },
+  {
+    id: 'room_noi_troi',
+    category: 'rooms',
+    name: 'Phòng Dải Ngân Hà',
+    icon: '🚀',
+    image: '/images/rom/phong_meo_noi_troi.webp',
+    price: 95000,
+    badge: 'Vũ Trụ',
+    description: 'Trạm quan sát không gian ngắm nhìn dải thiên hà huyền ảo, hành tinh sao Thổ và giường ngủ trăng khuyết lơ lửng.',
+    perk: '+15% Tỷ lệ xuất hiện cá đặc biệt',
+    color: '#6366F1',
+    accentColor: '#EEF2FF',
+  },
+  {
+    id: 'room_thu_vien',
+    category: 'rooms',
+    name: 'Phòng Thư Viện Tri Thức',
+    icon: '📚',
+    image: '/images/rom/phong_meo_thu_vien.webp',
+    price: 110000,
+    badge: 'Bác Học',
+    description: 'Tủ sách gỗ đồ sộ với hàng ngàn cuốn bách khoa tri thức và thang trèo mèo, tạo không gian trang nhã thông thái.',
+    perk: '+18% Điểm kinh nghiệm (XP)',
+    color: '#78350F',
+    accentColor: '#FEF3C7',
+  },
+  {
+    id: 'room_xuong_rong',
+    category: 'rooms',
+    name: 'Phòng Sa Mạc Xương Rồng',
+    icon: '🌵',
+    image: '/images/rom/phong_meo_xuong_rong.webp',
+    price: 135000,
+    badge: 'Hoang Dã',
+    description: 'Phòng gạch nung ấm áp mở tầm nhìn ra hẻm núi sa mạc rực nắng cùng tháp cào móng hình cây xương rồng độc đáo.',
+    perk: '+20% Tất cả hiệu quả bắt cá',
+    color: '#EA580C',
+    accentColor: '#FFEDD5',
+  },
 ];
 
 export function getFashionItemById(id?: string): FashionDecorItem | undefined {
   if (!id) return undefined;
+  if (id === 'hat_straw') return FASHION_DECOR_CATALOG.find((item) => item.id === 'hat_rong_vanh') || FASHION_DECOR_CATALOG.find((item) => item.id === 'hat_straw');
+  if (id === 'hat_wizard') return FASHION_DECOR_CATALOG.find((item) => item.id === 'hat_phu_thuy') || FASHION_DECOR_CATALOG.find((item) => item.id === 'hat_wizard');
+  if (id === 'hat_warm_beanie') return FASHION_DECOR_CATALOG.find((item) => item.id === 'hat_len_xam') || FASHION_DECOR_CATALOG.find((item) => item.id === 'hat_warm_beanie');
+  if (id === 'hat_pirate') return FASHION_DECOR_CATALOG.find((item) => item.id === 'hat_hai_tac') || FASHION_DECOR_CATALOG.find((item) => item.id === 'hat_pirate');
+  if (id === 'hat_crown') return FASHION_DECOR_CATALOG.find((item) => item.id === 'hat_vuong_mien_hoang_gia') || FASHION_DECOR_CATALOG.find((item) => item.id === 'hat_crown');
   if (id === 'rug_01_co_xanh_hoa') return FASHION_DECOR_CATALOG.find((item) => item.id === 'rug_peach');
   if (id === 'bowl_pink_paw') return FASHION_DECOR_CATALOG.find((item) => item.id === 'bowl_meo_no_hong');
   if (id === 'bowl_royal_gold') return FASHION_DECOR_CATALOG.find((item) => item.id === 'bowl_hoang_gia_den_vang');
@@ -1141,4 +1378,136 @@ export function getFashionItemById(id?: string): FashionDecorItem | undefined {
 
 export function getItemsByCategory(category: FashionCategory): FashionDecorItem[] {
   return FASHION_DECOR_CATALOG.filter((item) => item.category === category);
+}
+
+export interface ToyRewardConfig {
+  rate: number;         // Tỉ lệ rớt xu (0.35 -> 1.0)
+  ratePercent: number;  // 35% -> 100%
+  coinAmount: number;   // 1 xu cơ bản
+  maxCoins: number;     // 1 -> 2 xu
+  label: string;        // "Tỉ lệ cộng xu: 35%"
+}
+
+export function getToyRewardConfig(toy?: FashionDecorItem): ToyRewardConfig {
+  if (!toy) {
+    return { rate: 0.35, ratePercent: 35, coinAmount: 1, maxCoins: 1, label: 'Tỉ lệ cộng 1 xu: 35%' };
+  }
+  const price = toy.price || 0;
+  // Khởi đầu 35% cho món 0 xu, tăng dần theo giá trị món đồ đến 100% cho món >= 1200 xu
+  let rate = Math.min(1.0, 0.35 + (price / 1250) * 0.65);
+  rate = Math.round(rate * 100) / 100;
+  const ratePercent = Math.round(rate * 100);
+
+  const maxCoins = price >= 2000 ? 2 : 1;
+
+  return {
+    rate,
+    ratePercent,
+    coinAmount: 1,
+    maxCoins,
+    label: `Tỉ lệ cộng xu: ${ratePercent}%${maxCoins > 1 ? ' (+1~2 🪙)' : ' (+1 🪙)'}`,
+  };
+}
+
+export interface HatFittingState {
+  offsetX: number;     // px (-80 to 80)
+  offsetY: number;     // px (-100 to 60)
+  rotation: number;    // degrees (-90 to 90)
+  scale: number;       // scale multiplier (0.7 to 1.5)
+  isAttached: boolean; // whether it's pinned/attached
+}
+
+export const DEFAULT_HAT_FITTING: HatFittingState = {
+  offsetX: 0,
+  offsetY: 0,
+  rotation: 0,
+  scale: 1.0,
+  isAttached: true,
+};
+
+export const HAT_TRANSFORMS_STORAGE_KEY = 'purr_hat_transforms_v1';
+
+export function getSavedHatTransform(hatId?: string): HatFittingState {
+  if (!hatId) return { ...DEFAULT_HAT_FITTING };
+  try {
+    const raw = localStorage.getItem(HAT_TRANSFORMS_STORAGE_KEY);
+    if (raw) {
+      const all = JSON.parse(raw);
+      if (all && all[hatId]) {
+        return {
+          offsetX: typeof all[hatId].offsetX === 'number' ? all[hatId].offsetX : 0,
+          offsetY: typeof all[hatId].offsetY === 'number' ? all[hatId].offsetY : 0,
+          rotation: typeof all[hatId].rotation === 'number' ? all[hatId].rotation : 0,
+          scale: typeof all[hatId].scale === 'number' ? all[hatId].scale : 1.0,
+          isAttached: all[hatId].isAttached !== false,
+        };
+      }
+    }
+  } catch {}
+  return { ...DEFAULT_HAT_FITTING };
+}
+
+export function saveHatTransform(hatId: string, transform: HatFittingState): void {
+  if (!hatId) return;
+  try {
+    const raw = localStorage.getItem(HAT_TRANSFORMS_STORAGE_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[hatId] = {
+      offsetX: Math.round(transform.offsetX),
+      offsetY: Math.round(transform.offsetY),
+      rotation: Math.round(transform.rotation),
+      scale: Math.round(transform.scale * 100) / 100,
+      isAttached: transform.isAttached,
+    };
+    localStorage.setItem(HAT_TRANSFORMS_STORAGE_KEY, JSON.stringify(all));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(DECOR_POS_CHANGED_EVENT));
+    }
+  } catch {}
+}
+
+export interface DecorPosition {
+  x: number; // percentage (0 - 100)
+  y: number; // percentage (0 - 100)
+}
+
+export const DEFAULT_TOY_POSITIONS: DecorPosition[] = [
+  { x: 14, y: 76 },
+  { x: 26, y: 84 },
+  { x: 80, y: 84 },
+];
+
+export const DEFAULT_BOWL_POS: DecorPosition = { x: 86, y: 72 };
+
+export const DECOR_POS_CHANGED_EVENT = 'purr_decor_pos_changed';
+
+export function loadSavedDecorPos(key: string, defaultPos: DecorPosition): DecorPosition {
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+        return {
+          x: Math.max(6, Math.min(94, parsed.x)),
+          y: Math.max(10, Math.min(92, parsed.y)),
+        };
+      }
+    }
+  } catch {}
+  return defaultPos;
+}
+
+export function saveDecorPos(key: string, pos: DecorPosition): void {
+  try {
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        x: Math.round(pos.x * 10) / 10,
+        y: Math.round(pos.y * 10) / 10,
+      })
+    );
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(DECOR_POS_CHANGED_EVENT));
+    }
+  } catch {}
 }

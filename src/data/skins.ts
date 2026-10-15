@@ -5,6 +5,7 @@ export interface CatSkin {
   icon: string;
   image?: string;
   imageOpen?: string;
+  sound?: string; // Âm thanh tiếng mèo kêu tương ứng (/sounds/cat/cat_XX.mp3)
   unlockCost: number; // Fish required to unlock (0 = starting default)
   description: string;
   perk: string;
@@ -68,6 +69,25 @@ function processCatGlob(globObj: Record<string, unknown>) {
 
 processCatGlob(globCats1 as Record<string, unknown>);
 processCatGlob(globCats2 as Record<string, unknown>);
+
+// Sắp xếp tự nhiên để meo_01 -> meo_15 luôn theo đúng thứ tự
+scannedFiles.sort((a, b) =>
+  a.filename.localeCompare(b.filename, undefined, { numeric: true, sensitivity: 'base' })
+);
+
+/**
+ * Ánh xạ mỗi loài mèo với file tiếng kêu tương ứng (/sounds/cat/cat_01.mp3 -> cat_15.mp3)
+ */
+export function getCatSoundForFile(filename: string, index: number): string {
+  const match = filename.match(/(\d+)/);
+  if (match) {
+    const num = parseInt(match[1], 10);
+    const padded = String(Math.max(1, Math.min(15, num))).padStart(2, '0');
+    return `/sounds/cat/cat_${padded}.mp3`;
+  }
+  const fallbackNum = String((index % 15) + 1).padStart(2, '0');
+  return `/sounds/cat/cat_${fallbackNum}.mp3`;
+}
 
 // Cute skin name presets
 const PRESET_SKIN_METAS = [
@@ -303,6 +323,7 @@ function buildSkinsList(): CatSkin[] {
       subtitle: meta.subtitle,
       icon: meta.icon,
       image: '/images/cat_open_mouth.jpg',
+      sound: `/sounds/cat/cat_${String(idx + 1).padStart(2, '0')}.mp3`,
       unlockCost: meta.cost,
       description: meta.desc,
       perk: meta.perk,
@@ -369,6 +390,7 @@ function buildSkinsList(): CatSkin[] {
       icon: preset.icon,
       image: entry.base || entry.open,
       imageOpen: entry.open || entry.base,
+      sound: getCatSoundForFile(entry.originalName, index),
       unlockCost,
       description: preset.desc,
       perk: preset.perk,
@@ -385,3 +407,9 @@ function buildSkinsList(): CatSkin[] {
 }
 
 export const SKINS: CatSkin[] = buildSkinsList();
+
+export function getCatSoundBySkinId(skinId?: string): string {
+  if (!skinId) return '/sounds/cat/cat_01.mp3';
+  const found = SKINS.find((s) => s.id === skinId);
+  return found?.sound || '/sounds/cat/cat_01.mp3';
+}

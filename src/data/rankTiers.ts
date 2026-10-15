@@ -1,9 +1,10 @@
-export type RankTierKey = 'novice' | 'bronze' | 'silver' | 'gold' | 'diamond' | 'legend';
+export type RankTierKey = 'novice' | 'bronze' | 'silver' | 'gold' | 'diamond' | 'legend' | 'super_legend';
 
 export interface RankTier {
   key: RankTierKey;
   name: string;
   badge: string;
+  badgeImage: string;
   minLevel: number;
   maxLevel: number;
   minXp: number;
@@ -17,8 +18,9 @@ export interface RankTier {
 export const RANK_TIERS: Record<RankTierKey, RankTier> = {
   novice: {
     key: 'novice',
-    name: 'Tập Sự',
-    badge: '⚪',
+    name: 'Tân Thủ',
+    badge: '🐾',
+    badgeImage: '/images/cat_badges_webp/badge_01.webp',
     minLevel: 1,
     maxLevel: 9,
     minXp: 0,
@@ -32,6 +34,7 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
     key: 'bronze',
     name: 'Đồng',
     badge: '🥉',
+    badgeImage: '/images/cat_badges_webp/badge_02.webp',
     minLevel: 10,
     maxLevel: 24,
     minXp: 27125,
@@ -45,6 +48,7 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
     key: 'silver',
     name: 'Bạc',
     badge: '🥈',
+    badgeImage: '/images/cat_badges_webp/badge_03.webp',
     minLevel: 25,
     maxLevel: 49,
     minXp: 362928,
@@ -58,6 +62,7 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
     key: 'gold',
     name: 'Vàng',
     badge: '🥇',
+    badgeImage: '/images/cat_badges_webp/badge_04.webp',
     minLevel: 50,
     maxLevel: 74,
     minXp: 2569119,
@@ -71,6 +76,7 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
     key: 'diamond',
     name: 'Kim Cương',
     badge: '💎',
+    badgeImage: '/images/cat_badges_webp/badge_05.webp',
     minLevel: 75,
     maxLevel: 99,
     minXp: 8060203,
@@ -84,14 +90,29 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
     key: 'legend',
     name: 'Huyền Thoại',
     badge: '🔥',
+    badgeImage: '/images/cat_badges_webp/badge_06.png',
     minLevel: 100,
-    maxLevel: 999,
+    maxLevel: 149,
     minXp: 18156340,
+    maxXp: 45000000,
+    color: '#A855F7',
+    gradient: 'linear-gradient(135deg, #8B5CF6, #6366F1)',
+    borderGlow: 'rgba(168, 85, 247, 0.75)',
+    description: 'Vua Mèo Huyền Thoại thống trị mọi đại dương và bảng xếp hạng!',
+  },
+  super_legend: {
+    key: 'super_legend',
+    name: 'Siêu Huyền Thoại',
+    badge: '👑',
+    badgeImage: '/images/cat_badges_webp/badge_07.webp',
+    minLevel: 150,
+    maxLevel: 999,
+    minXp: 45000001,
     maxXp: 999999999,
     color: '#FF1744',
-    gradient: 'linear-gradient(135deg, #EF4444, #7C3AED)',
-    borderGlow: 'rgba(239, 68, 68, 0.75)',
-    description: 'Vua Mèo Huyền Thoại thống trị mọi đại dương và bảng xếp hạng!',
+    gradient: 'linear-gradient(135deg, #EF4444, #F59E0B)',
+    borderGlow: 'rgba(239, 68, 68, 0.85)',
+    description: 'Đỉnh cao tối thượng! Vua Mèo Siêu Huyền Thoại thống trị muôn loài!',
   },
 };
 
@@ -99,6 +120,7 @@ export const RANK_TIERS: Record<RankTierKey, RankTier> = {
  * Returns the RankTier for a given level
  */
 export function getRankTierByLevel(level: number): RankTier {
+  if (level >= 150) return RANK_TIERS.super_legend;
   if (level >= 100) return RANK_TIERS.legend;
   if (level >= 75) return RANK_TIERS.diamond;
   if (level >= 50) return RANK_TIERS.gold;
@@ -109,12 +131,12 @@ export function getRankTierByLevel(level: number): RankTier {
 
 /**
  * Tính điểm kinh nghiệm (XP) cần thiết để lên cấp tiếp theo (Hardcore Exponential Progression).
- * Cấp độ đầu tiên Lv1 yêu cầu 500 XP. Càng lên cao yêu cầu điểm kinh nghiệm tăng vọt.
+ * Cấp độ đầu tiên Lv1 yêu cầu 100 XP. Càng lên cao yêu cầu điểm kinh nghiệm tăng vọt.
  */
 export function getXpRequiredForLevel(level: number): number {
-  if (level <= 1) return 500;
+  if (level <= 1) return 100;
   // Đường cong tăng trưởng kinh nghiệm luỹ thừa bậc cao chống lạm phát cấp độ
-  const base = 500;
+  const base = 100;
   const growth = Math.floor(180 * Math.pow(level - 1, 1.55) + 30 * Math.pow(level - 1, 2));
   return base + growth;
 }
