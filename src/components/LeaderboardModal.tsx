@@ -204,7 +204,16 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
           <div className="my-rank-right">
             <div className="my-level-tag">Lv.{myLevel}</div>
-            <div className="my-xp-tag">{formatNumber(myXp)} XP • 🪙 {formatNumber(myCoins)}</div>
+            <div className="my-xp-tag flex items-center gap-1 justify-end">
+              <span>{formatNumber(myXp)} XP •</span>
+              <img
+                src="/images/icon/xu-vang.webp"
+                alt="Xu"
+                className="w-3 h-3 object-contain inline-block shrink-0"
+                draggable={false}
+              />
+              <span>{formatNumber(myCoins)}</span>
+            </div>
           </div>
         </div>
       </div>

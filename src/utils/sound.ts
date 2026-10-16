@@ -9,6 +9,8 @@ class SoundController {
   private _musicVolume: number = 0.5;
   private castWhooshAudio: HTMLAudioElement | null = null;
   private reelingAudio: HTMLAudioElement | null = null;
+  private dropCoinAudio: HTMLAudioElement | null = null;
+  private purchaseSuccessAudio: HTMLAudioElement | null = null;
   private catAudioPool: Map<string, HTMLAudioElement> = new Map();
 
   // Real MP3 Background Music Tracks
@@ -108,6 +110,8 @@ class SoundController {
 
   public set sfxVolume(val: number) {
     this._sfxVolume = Math.max(0, Math.min(1, val));
+    if (this.dropCoinAudio) this.dropCoinAudio.volume = this._sfxVolume;
+    if (this.purchaseSuccessAudio) this.purchaseSuccessAudio.volume = this._sfxVolume;
   }
 
   public get musicVolume(): number {
@@ -388,6 +392,79 @@ class SoundController {
     } catch {
       // Audio error
     }
+  }
+
+  /**
+   * Âm thanh bán cá nhận xu vàng (sử dụng file /sounds/drop-coin.mp3)
+   */
+  playSellFish() {
+    this.playDropCoin();
+  }
+
+  /**
+   * Âm thanh rơi xu vàng / bán cá (sử dụng file /sounds/drop-coin.mp3)
+   */
+  playDropCoin() {
+    if (!this.enabled) return;
+
+    try {
+      if (typeof Audio !== 'undefined') {
+        if (!this.dropCoinAudio) {
+          this.dropCoinAudio = new Audio('/sounds/drop-coin.mp3');
+          this.dropCoinAudio.preload = 'auto';
+        }
+        if (!this.dropCoinAudio.paused) {
+          const clone = this.dropCoinAudio.cloneNode() as HTMLAudioElement;
+          clone.volume = Math.max(0, Math.min(1, this._sfxVolume));
+          clone.play().catch(() => {});
+          return;
+        }
+        this.dropCoinAudio.currentTime = 0;
+        this.dropCoinAudio.volume = Math.max(0, Math.min(1, this._sfxVolume));
+        const playPromise = this.dropCoinAudio.play();
+        if (playPromise) {
+          playPromise.catch(() => {});
+        }
+        return;
+      }
+    } catch {
+      // Audio error fallback
+    }
+
+    this.playUpgrade();
+  }
+
+  /**
+   * Âm thanh mua hàng thành công (sử dụng file /sounds/purchase-success.mp3)
+   */
+  playPurchaseSuccess() {
+    if (!this.enabled) return;
+
+    try {
+      if (typeof Audio !== 'undefined') {
+        if (!this.purchaseSuccessAudio) {
+          this.purchaseSuccessAudio = new Audio('/sounds/purchase-success.mp3');
+          this.purchaseSuccessAudio.preload = 'auto';
+        }
+        if (!this.purchaseSuccessAudio.paused) {
+          const clone = this.purchaseSuccessAudio.cloneNode() as HTMLAudioElement;
+          clone.volume = Math.max(0, Math.min(1, this._sfxVolume));
+          clone.play().catch(() => {});
+          return;
+        }
+        this.purchaseSuccessAudio.currentTime = 0;
+        this.purchaseSuccessAudio.volume = Math.max(0, Math.min(1, this._sfxVolume));
+        const playPromise = this.purchaseSuccessAudio.play();
+        if (playPromise) {
+          playPromise.catch(() => {});
+        }
+        return;
+      }
+    } catch {
+      // Audio error fallback
+    }
+
+    this.playUpgrade();
   }
 
   /**

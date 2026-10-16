@@ -448,7 +448,7 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
 
     // Hiển thị popup cục bộ ngay tại vị trí của đồ chơi trong phòng
     const pos = toyPositions[idx] || DEFAULT_TOY_POSITIONS[idx] || { x: 14 + idx * 22, y: 76 };
-    const popupText = isSuccess ? `+${gained} 🪙` : `🐾 Vui đùa! (${ratePercent}%)`;
+    const popupText = isSuccess ? `+${gained} Xu` : `🐾 Vui đùa! (${ratePercent}%)`;
     const newPopup: LocalPopupItem = {
       id: `pop_toy_${Date.now()}_${Math.random()}`,
       xPercent: pos.x,
@@ -605,7 +605,7 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
       id: `pop_${Date.now()}_${Math.random()}`,
       xPercent: 35 + Math.random() * 30,
       yPercent: 35 + Math.random() * 25,
-      text: isCrit ? `CRIT! +${earned} 🪙` : `+${earned} 🪙`,
+      text: isCrit ? `CRIT! +${earned} Xu` : `+${earned} Xu`,
       isCrit,
     };
 
@@ -1544,7 +1544,16 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
           onClick={handlePetButtonClick}
         >
           <span className="material-symbols-outlined text-[20px] sm:text-[24px]">favorite</span>
-          <span className="truncate">Vuốt ve {catName || currentSkin.name} (+{actualClickPower} 🪙)</span>
+          <span className="truncate flex items-center justify-center gap-1">
+            <span>Vuốt ve {catName || currentSkin.name} (+{actualClickPower}</span>
+            <img
+              src="/images/icon/xu-vang.webp"
+              alt="Xu"
+              className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain inline-block shrink-0"
+              draggable={false}
+            />
+            <span>)</span>
+          </span>
           <span className="material-symbols-outlined text-[16px] sm:text-[20px] opacity-80">touch_app</span>
         </button>
       </div>

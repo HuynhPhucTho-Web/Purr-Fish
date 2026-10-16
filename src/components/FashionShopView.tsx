@@ -18,6 +18,7 @@ import {
 import type { CatSkin } from '../data/skins';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
+import { CoinIcon } from './CoinIcon';
 
 export interface FashionShopViewProps {
   coins: number;
@@ -488,8 +489,8 @@ export const FashionShopView: React.FC<FashionShopViewProps> = ({
           </div>
 
           <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-xl p-2 sm:p-3 shadow-xs flex items-center justify-between mb-2 sm:mb-3.5">
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <span className="text-lg sm:text-2xl">🪙</span>
+            <div className="flex items-center gap-2 sm:gap-2.5">
+              <CoinIcon size={24} />
               <div>
                 <span className="text-[10px] sm:text-xs text-amber-900 font-bold block leading-none">Xu Vàng Hiện Có</span>
                 <span className="text-sm sm:text-lg font-black text-amber-950 leading-tight">{formatNumber(coins)} Xu</span>
@@ -1163,7 +1164,7 @@ export const FashionShopView: React.FC<FashionShopViewProps> = ({
 
                   {item.category === 'balls' && (
                     <div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-black leading-none">
-                      <span>🪙</span>
+                      <CoinIcon size={12} />
                       <span>{getToyRewardConfig(item).label}</span>
                     </div>
                   )}
@@ -1180,8 +1181,9 @@ export const FashionShopView: React.FC<FashionShopViewProps> = ({
                   {item.price === 0 ? (
                     <span className="text-xs font-bold text-emerald-700">Miễn phí</span>
                   ) : !owned ? (
-                    <span className="text-xs font-bold text-amber-900 flex items-center gap-0.5">
-                      🪙 {formatNumber(item.price)} Xu
+                    <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                      <CoinIcon size={14} />
+                      <span>{formatNumber(item.price)} Xu</span>
                     </span>
                   ) : (
                     <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">
@@ -1217,7 +1219,7 @@ export const FashionShopView: React.FC<FashionShopViewProps> = ({
                         : item.category === 'balls'
                         ? `Gắn Phòng (${equippedBallsList.length}/3)`
                         : 'Trang Bị'
-                      : `Mua (${formatNumber(item.price)}🪙)`}
+                      : `Mua (${formatNumber(item.price)} Xu)`}
                   </button>
                 </div>
               </div>

@@ -8,6 +8,7 @@ import {
 import type { ActiveMealPlanInfo } from '../utils/saveGame';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
+import { CoinIcon } from './CoinIcon';
 
 interface FoodShopMealPlanViewProps {
   coins: number;
@@ -391,8 +392,8 @@ export const FoodShopMealPlanView: React.FC<FoodShopMealPlanViewProps> = ({
                   {/* Bottom Row: Price & Buy Button (Cố định dưới đáy) */}
                   <div className="pt-2 border-t border-amber-100/70 mt-auto">
                     <div className="flex items-baseline justify-between mb-1.5">
-                      <span className="text-xs font-black text-amber-900 flex items-center gap-0.5">
-                        <span>🪙</span>
+                      <span className="text-xs font-black text-amber-900 flex items-center gap-1">
+                        <CoinIcon size={14} />
                         <span>{formatNumber(totalPrice)}</span>
                       </span>
                       {purchaseQuantity > 1 && (
@@ -692,7 +693,10 @@ export const FoodShopMealPlanView: React.FC<FoodShopMealPlanViewProps> = ({
                     <div className="plan-price-block">
                       <span className="discount-tag">-{plan.discountPercent}%</span>
                       <del className="original-price">{formatNumber(plan.originalPrice)} Xu</del>
-                      <strong className="final-price">🪙 {formatNumber(plan.price)} Xu</strong>
+                      <strong className="final-price flex items-center gap-1">
+                        <CoinIcon size={16} />
+                        <span>{formatNumber(plan.price)} Xu</span>
+                      </strong>
                     </div>
 
                     <button

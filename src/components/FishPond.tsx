@@ -27,11 +27,16 @@ interface FishPondProps {
   currentSkin: CatSkin;
   fish: number; // Coins
   basketCount: number;
+  maxBasketCapacity?: number;
   equippedRodId?: string;
   rodDurability?: number;
   unlockedRods?: string[];
   catFood?: number;
   satietyExpiresAt?: number;
+  biteTimeReduction?: number;
+  reelAssist?: number;
+  safeZoneBonus?: number;
+  trophyLuckBonus?: number;
   onCatchFish: (species: FishSpecies) => CaughtFishItem;
   onBuyRod?: (rodId: string) => { success: boolean; message: string };
   onUseRodDurability?: () => number;
@@ -67,8 +72,8 @@ export function getFishTier(species: FishSpecies): 1 | 2 | 3 {
  * Cần cấp cao (Vàng, Thần Thoại) có tỷ lệ gặp cá to, cá khủng và cá hiếm cao hơn rất nhiều.
  * Hỗ trợ excludeIds để ưu tiên xuất hiện đa dạng nhiều loài cá khác nhau trong bể.
  */
-function rollFishForRod(rod: FishingRod, excludeIds: string[] = []): FishSpecies {
-  const luck = rod.bigFishLuck ?? 0.2;
+function rollFishForRod(rod: FishingRod, excludeIds: string[] = [], extraLuck: number = 0): FishSpecies {
+  const luck = Math.min(0.95, (rod.bigFishLuck ?? 0.2) + extraLuck);
   const rand = Math.random();
 
   let candidatePool: FishSpecies[];
@@ -114,11 +119,16 @@ export const FishPond: React.FC<FishPondProps> = React.memo(({
   currentSkin,
   fish,
   basketCount = 0,
+  maxBasketCapacity = 50,
   equippedRodId = 'wood_rod',
   rodDurability = 10,
   unlockedRods = ['wood_rod'],
   catFood = 100,
   satietyExpiresAt = 0,
+  biteTimeReduction = 0,
+  reelAssist = 0,
+  safeZoneBonus = 0,
+  trophyLuckBonus = 0,
   onCatchFish,
   onBuyRod,
   onUseRodDurability,
@@ -282,7 +292,7 @@ export const FishPond: React.FC<FishPondProps> = React.memo(({
   // Helper to spawn a new natural swimming fish with distinct speeds & swimming characteristics
   const createSwimmingFish = useCallback(
     (index: number, totalCount: number, rod: FishingRod, excludeIds: string[] = []): ActiveSwimmingFish => {
-      const species = rollFishForRod(rod, excludeIds);
+      const species = rollFishForRod(rod, excludeIds, trophyLuckBonus);
       const facingRight = Math.random() > 0.5;
 
       // Tốc độ bơi khác biệt rõ rệt theo loài (từ 0.08x cho cá chậm đến 0.32x cho cá phóng nhanh)
@@ -391,7 +401,7 @@ export const FishPond: React.FC<FishPondProps> = React.memo(({
     setTimeout(() => {
       const filtered = swimmingFishRef.current.filter((item) => item.instanceId !== caught.instanceId);
       const activeIds = filtered.map((f) => f.species.id);
-      const newSpecies = rollFishForRod(currentRodRef.current, activeIds);
+      const newSpecies = rollFishForRod(currentRodRef.current, activeIds, trophyLuckBonus);
       const facingRight = Math.random() > 0.5;
       const speedVariation = 0.88 + Math.random() * 0.26;
       const speed = +(0.11 * newSpecies.speed * speedVariation).toFixed(3);
@@ -653,8 +663,9 @@ export const FishPond: React.FC<FishPondProps> = React.memo(({
           if (f.isCaught || f.isEscaped) continue;
           const dist = Math.hypot(f.x - nextX, (f.y - nextY) * 1.3);
 
-          const rodHitBonus = (rod.bigFishLuck || 0) * 1.6;
-          const hitbox = f.species.size / 36 + 2.2 + (f.species.baseWeightKg > 5 ? rodHitBonus : 0);
+          const rodHitBonus = (rod.bigFishLuck || 0) * 1.6 + trophyLuckBonus * 3.5;
+          const biteBonus = biteTimeReduction * 2.5; // Thính dụ cá giúp cá đớp mồi nhạy hơn một chút
+          const hitbox = f.species.size / 36 + 2.2 + biteBonus + (f.species.baseWeightKg > 5 ? rodHitBonus : 0);
 
           if (dist <= hitbox) {
             candidates.push(f);
@@ -841,9 +852,10 @@ export const FishPond: React.FC<FishPondProps> = React.memo(({
           }
         }
 
-        // Tier 2: Giằng co theo nhịp cá quẫy (quẫy tụt -20%/s, mệt tụt nhẹ -6%/s)
+        // Tier 2: Giằng co theo nhịp cá quẫy (quẫy tụt -20%/s, mệt tụt nhẹ -6%/s, hỗ trợ bởi reel_technique)
         if (tier === 2) {
-          const decayRate = isRaging ? 20 : 6;
+          const baseDecay = isRaging ? 20 : 6;
+          const decayRate = baseDecay * Math.max(0.8, 1 - reelAssist);
           reelProgressRef.current = Math.max(0, reelProgressRef.current - decayRate * decayStep);
           setReelProgress(reelProgressRef.current);
         }
@@ -852,7 +864,7 @@ export const FishPond: React.FC<FishPondProps> = React.memo(({
         if (tier === 3) {
           const fishWeight = hitFish.species.baseWeightKg || 10;
           const baseHalf = Math.max(3.2, 9.6 - fishWeight * 0.18);
-          const rodBonus = (rod.safeZoneBonus || 0) * 0.15;
+          const rodBonus = ((rod.safeZoneBonus || 0) + safeZoneBonus) * 0.15;
           const halfWidth = +(baseHalf + rodBonus).toFixed(1);
 
           const driftSpeed = 0.0013 + (hitFish.species.difficultyLevel >= 5 ? 0.0006 : 0);
@@ -1067,7 +1079,7 @@ export const FishPond: React.FC<FishPondProps> = React.memo(({
         setDurability(targetRod.maxDurability);
         durabilityRef.current = targetRod.maxDurability;
         setBrokenAlert(null);
-        soundManager.playUnlock();
+        soundManager.playPurchaseSuccess();
         setIsRodShopOpen(false);
       } else {
         alert(res.message);
@@ -1107,7 +1119,12 @@ export const FishPond: React.FC<FishPondProps> = React.memo(({
 
           <div className="flex items-center gap-1 shrink-0">
             <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200/80 text-amber-900 font-bold text-xs shadow-xs">
-              <span>🪙</span>
+              <img
+                src="/images/icon/xu-vang.webp"
+                alt="Xu"
+                className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                draggable={false}
+              />
               <span>{formatNumber(fish)}</span>
             </div>
 
@@ -1889,7 +1906,7 @@ export const FishPond: React.FC<FishPondProps> = React.memo(({
                 />
                 {basketCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[9px] sm:text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-md border-2 border-white leading-tight z-10 animate-pulse">
-                    {basketCount}
+                    {basketCount}/{maxBasketCapacity}
                   </span>
                 )}
               </div>
@@ -1962,7 +1979,12 @@ export const FishPond: React.FC<FishPondProps> = React.memo(({
                   </div>
                 </div>
                 <div className="flex items-center gap-1 font-bold text-amber-900 text-xs px-2.5 py-1 rounded-full bg-white border border-amber-200">
-                  <span>🪙</span>
+                  <img
+                    src="/images/icon/xu-vang.webp"
+                    alt="Xu"
+                    className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                    draggable={false}
+                  />
                   <span>{formatNumber(fish)}</span>
                 </div>
               </div>
@@ -2152,8 +2174,16 @@ export const FishPond: React.FC<FishPondProps> = React.memo(({
                           </div>
 
                           <div className="text-right shrink-0 ml-2">
-                            <span className="text-xs font-extrabold text-amber-700 block">
-                              {rod.price === 0 ? 'Miễn phí' : `${formatNumber(rod.price)} 🪙`}
+                            <span className="text-xs font-extrabold text-amber-700 flex items-center justify-end gap-1">
+                              <span>{rod.price === 0 ? 'Miễn phí' : formatNumber(rod.price)}</span>
+                              {rod.price > 0 && (
+                                <img
+                                  src="/images/icon/xu-vang.webp"
+                                  alt="Xu"
+                                  className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                                  draggable={false}
+                                />
+                              )}
                             </span>
                             {isUnlocked && (
                               <span className="text-[10px] font-bold text-emerald-700 block">

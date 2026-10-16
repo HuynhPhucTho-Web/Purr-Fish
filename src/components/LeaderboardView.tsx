@@ -185,7 +185,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
     await fetchCloudLeaderboard();
     setToastMessage({
       title: 'Bảng Xếp Hạng Đã Cập Nhật!',
-      subtitle: `Dữ liệu người chơi thật theo ${criterion === 'coins' ? 'Số Xu 🪙' : criterion === 'level' ? 'Level ⭐' : 'Điểm XP ✨'} đã được làm mới.`,
+      subtitle: `Dữ liệu người chơi thật theo ${criterion === 'coins' ? 'Số Xu' : criterion === 'level' ? 'Level ⭐' : 'Điểm XP ✨'} đã được làm mới.`,
     });
     setShowToast(true);
     setTimeout(() => setShowToast(false), 2400);
@@ -204,7 +204,8 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
     if (criterion === 'coins') {
       return {
         value: `${formatNumber(player.coins)}`,
-        unit: '🪙 Xu',
+        unit: 'Xu',
+        isCoins: true,
       };
     }
     if (criterion === 'level') {
@@ -381,8 +382,14 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
         <div className="grid grid-cols-3 gap-2 mt-3.5 bg-white/90 backdrop-blur-xs rounded-xl p-2.5 border border-amber-200/60 shadow-2xs">
           <div className="flex flex-col items-center text-center">
             <span className="text-[11px] text-slate-500 font-medium">Số Xu</span>
-            <span className="text-xs sm:text-sm font-black text-amber-900 truncate max-w-full">
-              🪙 {formatNumber(myCoins)}
+            <span className="text-xs sm:text-sm font-black text-amber-900 truncate max-w-full flex items-center justify-center gap-1">
+              <img
+                src="/images/icon/xu-vang.webp"
+                alt="Xu"
+                className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                draggable={false}
+              />
+              <span>{formatNumber(myCoins)}</span>
             </span>
           </div>
           <div className="flex flex-col items-center text-center border-x border-amber-200">
@@ -498,7 +505,12 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <span>🪙</span>
+            <img
+              src="/images/icon/xu-vang.webp"
+              alt="Xu"
+              className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+              draggable={false}
+            />
             <span>Số Xu</span>
           </button>
           <button
@@ -767,8 +779,23 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
           <h3 className="text-xs font-black text-slate-700 uppercase tracking-wide">
             Top Ngư Thủ Tiếp Theo (Hạng 4 – {Math.max(4, sortedPlayers.length)})
           </h3>
-          <span className="text-[11px] text-slate-500 font-medium">
-            Sắp xếp theo {criterion === 'coins' ? 'Xu 🪙' : criterion === 'level' ? 'Level ⭐' : 'XP ✨'}
+          <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+            <span>Sắp xếp theo</span>
+            {criterion === 'coins' ? (
+              <span className="inline-flex items-center gap-0.5">
+                <span>Xu</span>
+                <img
+                  src="/images/icon/xu-vang.webp"
+                  alt="Xu"
+                  className="w-3 h-3 object-contain inline-block shrink-0"
+                  draggable={false}
+                />
+              </span>
+            ) : criterion === 'level' ? (
+              'Level ⭐'
+            ) : (
+              'XP ✨'
+            )}
           </span>
         </div>
 
@@ -841,8 +868,16 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                     <span className="text-xs sm:text-sm font-black text-orange-950 block">
                       {score.value}
                     </span>
-                    <span className="text-[10px] text-slate-500 font-semibold block">
-                      {score.unit}
+                    <span className="text-[10px] text-slate-500 font-semibold flex items-center justify-end gap-1">
+                      {score.isCoins && (
+                        <img
+                          src="/images/icon/xu-vang.webp"
+                          alt="Xu"
+                          className="w-3 h-3 object-contain inline-block shrink-0"
+                          draggable={false}
+                        />
+                      )}
+                      <span>{score.unit}</span>
                     </span>
                   </div>
                 </div>

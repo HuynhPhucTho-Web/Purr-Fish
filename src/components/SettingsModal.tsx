@@ -94,7 +94,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <div className="settings-modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title-row">
-            <span className="modal-header-icon">⚙️</span>
+            <img
+              src="/images/icon/icon-seting.webp"
+              alt="Cài đặt"
+              className="w-5 h-5 sm:w-6 sm:h-6 object-contain inline-block shrink-0 drop-shadow-xs"
+              draggable={false}
+            />
             <h2 className="modal-title">Cài Đặt</h2>
           </div>
           <button type="button" className="close-btn" onClick={onClose} aria-label="Đóng cài đặt">
@@ -120,7 +125,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {currentUser.photoURL ? (
                         <img src={currentUser.photoURL} alt={currentUser.displayName} className="w-full h-full object-cover" />
                       ) : (
-                        <span className="text-xl">🐱</span>
+                        <img src="/images/logo-purr-fish.jpg" alt="Avatar" className="w-full h-full object-cover" />
                       )}
                     </div>
                     <div className="min-w-0">
@@ -194,8 +199,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             ) : (
               /* Trạng thái khách chơi thử: Rõ ràng, chỉ cho chơi thử và nhắc đăng nhập để đua hạng */
               <div className="p-3 bg-amber-50/90 rounded-xl border border-amber-300 text-left">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-2xl shrink-0">🐾</span>
+                <div className="flex items-center gap-2.5 mb-1.5">
+                  <img
+                    src="/images/logo-purr-fish.jpg"
+                    alt="Purr-Fish"
+                    className="w-9 h-9 rounded-xl object-cover border border-amber-300 shadow-xs shrink-0"
+                    draggable={false}
+                  />
                   <div className="min-w-0">
                     <span className="font-black text-xs text-amber-950 block">
                       Chế Độ Chơi Thử (Khách Vãng Lai)
@@ -421,6 +431,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             )}
           </section>
+
+          {/* Game Branding & Info Footer */}
+          <div className="flex flex-col items-center justify-center pt-3 pb-1 text-center border-t border-amber-200/60 mt-3">
+            <img
+              src="/images/logo-purr-fish.jpg"
+              alt="Purr-Fish Logo"
+              className="w-10 h-10 rounded-xl shadow-xs border border-amber-300 object-cover mb-1"
+              draggable={false}
+            />
+            <span className="text-xs font-black text-amber-900">Purr-Fish</span>
+            <span className="text-[10px] text-slate-400 font-medium">Phiên bản 1.0.0 • Trò chơi nuôi mèo & câu cá pastel</span>
+          </div>
         </div>
       </div>
     </div>

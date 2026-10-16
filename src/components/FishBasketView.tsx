@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { CaughtFishItem } from '../data/fishes';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
+import { CoinIcon } from './CoinIcon';
 
 interface FishBasketViewProps {
   basket: CaughtFishItem[];
@@ -113,21 +114,29 @@ export const FishBasketView: React.FC<FishBasketViewProps> = ({
           </div>
           <div className="stat-box highlight-gold">
             <span className="stat-label">Giá trị ước tính</span>
-            <strong className="stat-number">🪙 {formatNumber(totalValue)} Xu</strong>
+            <strong className="stat-number flex items-center justify-center gap-1">
+              <CoinIcon size="sm" />
+              <span>{formatNumber(totalValue)} Xu</span>
+            </strong>
           </div>
           <div className="stat-box">
             <span className="stat-label">Xu đang có</span>
-            <strong className="stat-number">🪙 {formatNumber(fish)}</strong>
+            <strong className="stat-number flex items-center justify-center gap-1">
+              <CoinIcon size="sm" />
+              <span>{formatNumber(fish)}</span>
+            </strong>
           </div>
         </div>
 
         <button
           type="button"
-          className="sell-all-big-btn"
+          className="sell-all-big-btn flex items-center justify-center gap-1.5"
           onClick={handleSellAll}
           disabled={safeBasket.length === 0}
         >
-          💰 Bán Tất Cả Lấy {formatNumber(totalValue)} Xu Vàng
+          <span>Bán Tất Cả Lấy</span>
+          <CoinIcon size="md" />
+          <span>{formatNumber(totalValue)} Xu Vàng</span>
         </button>
       </div>
 
@@ -164,7 +173,8 @@ export const FishBasketView: React.FC<FishBasketViewProps> = ({
                 setSortOption('value');
               }}
             >
-              Giá cao 🪙
+              <span>Giá cao</span>
+              <CoinIcon size="xs" />
             </button>
             <button
               type="button"
@@ -215,19 +225,20 @@ export const FishBasketView: React.FC<FishBasketViewProps> = ({
                   <div className="fish-weight-line">
                     <span className="weight-tag">⚖️ {item.weightKg} kg</span>
                   </div>
-                  <div className="fish-value-line">
-                    <span className="coin-icon">🪙</span>
+                  <div className="fish-value-line flex items-center gap-1">
+                    <CoinIcon size="xs" />
                     <strong className="sell-price-num">{formatNumber(item.sellPrice)} Xu</strong>
                   </div>
                 </div>
 
                 <button
                   type="button"
-                  className="sell-single-fish-btn"
+                  className="sell-single-fish-btn flex items-center justify-center gap-1"
                   onClick={() => handleSellOne(item.instanceId)}
                   title={`Bán lấy ${formatNumber(item.sellPrice)} xu`}
                 >
-                  Bán Lẻ 🪙
+                  <span>Bán Lẻ</span>
+                  <CoinIcon size="xs" />
                 </button>
               </div>
             ))}

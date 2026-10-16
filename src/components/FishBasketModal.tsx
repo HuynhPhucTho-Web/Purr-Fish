@@ -58,7 +58,15 @@ export const FishBasketModal: React.FC<FishBasketModalProps> = ({
             </div>
             <div className="b-stat-item highlight-coins">
               <span className="b-stat-label">Tổng giá trị:</span>
-              <strong className="b-stat-value">🪙 {formatNumber(totalValue)}</strong>
+              <strong className="b-stat-value flex items-center justify-center gap-1">
+                <img
+                  src="/images/icon/xu-vang.webp"
+                  alt="Xu"
+                  className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                  draggable={false}
+                />
+                <span>{formatNumber(totalValue)} Xu</span>
+              </strong>
             </div>
           </div>
 
@@ -114,8 +122,13 @@ export const FishBasketModal: React.FC<FishBasketModalProps> = ({
                   </div>
 
                   <div className="b-card-action">
-                    <div className="b-price-tag">
-                      <span>🪙</span>
+                    <div className="b-price-tag flex items-center gap-1">
+                      <img
+                        src="/images/icon/xu-vang.webp"
+                        alt="Xu"
+                        className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                        draggable={false}
+                      />
                       <strong>{formatNumber(item.sellPrice)}</strong>
                     </div>
                     <button

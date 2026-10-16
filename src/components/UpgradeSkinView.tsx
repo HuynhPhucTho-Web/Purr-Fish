@@ -4,6 +4,7 @@ import { SKINS, type CatSkin } from '../data/skins';
 import { FISHING_RODS_CATALOG, getRodById, type FishingRod, getRodRepairCost } from '../data/fishingRods';
 import { calculateUpgradeCost, formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
+import { CoinIcon } from './CoinIcon';
 
 export type ShopSubTab = 'rods' | 'upgrades' | 'skins';
 
@@ -83,7 +84,7 @@ export const UpgradeSkinView: React.FC<UpgradeSkinViewProps> = ({
 
       {/* Coins Banner */}
       <div className="shop-balance-banner">
-        <span className="balance-icon">🪙</span>
+        <CoinIcon size={22} />
         <span className="balance-label">Xu Vàng Hiện Có:</span>
         <strong className="balance-val">{formatNumber(fish)} Xu</strong>
       </div>
@@ -125,46 +126,74 @@ export const UpgradeSkinView: React.FC<UpgradeSkinViewProps> = ({
       {/* SUBTAB 1: SHOP CẦN CÂU */}
       {subTab === 'rods' && (
         <div className="shop-section rods-tab-container flex flex-col gap-3">
-          {/* Active Equipped Rod Card */}
-          <div className="p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 border border-amber-300/50 shadow-xs flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-13 h-13 sm:w-16 sm:h-16 rounded-2xl bg-white border border-amber-200/80 p-1 flex items-center justify-center shrink-0 shadow-sm overflow-hidden">
+          {/* Active Equipped Rod Banner */}
+          <div className="p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-amber-400/60 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white border border-amber-200/80 p-1.5 flex items-center justify-center shrink-0 shadow-xs overflow-hidden">
                 {activeRodObj.image ? (
                   <img
                     src={activeRodObj.image}
                     alt={activeRodObj.name}
                     className="w-full h-full object-contain"
+                    draggable={false}
                   />
                 ) : (
-                  <span className="text-3xl">{activeRodObj.icon}</span>
+                  <span className="text-2xl sm:text-3xl">{activeRodObj.icon}</span>
                 )}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500 text-white">
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white shadow-2xs">
                     ĐANG DÙNG
                   </span>
                   <h3 className="font-black text-sm sm:text-base text-on-surface truncate">
                     {activeRodObj.name}
                   </h3>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/80 text-amber-800 border border-amber-200">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/90 text-amber-900 border border-amber-200/80">
                     {activeRodObj.badge}
                   </span>
                 </div>
-                <div className="mt-1 flex items-center gap-2 text-xs text-on-surface-variant font-medium">
-                  <span>
-                    Độ bền:{' '}
-                    <strong className={currentActiveDurability <= 0 ? 'text-red-600 font-bold' : 'text-emerald-700 font-bold'}>
-                      {currentActiveDurability}/{activeRodObj.maxDurability} lượt
-                    </strong>
-                  </span>
-                  <span>•</span>
-                  <span>
-                    Ra dây: <strong>{activeRodObj.lineSpeed}x</strong>
-                  </span>
+                {/* Durability status & bar */}
+                <div className="mt-1.5 flex flex-col gap-1">
+                  <div className="flex items-center justify-between text-xs text-on-surface-variant font-medium">
+                    <span>
+                      Độ bền:{' '}
+                      <strong className={currentActiveDurability <= 0 ? 'text-red-600 font-bold' : 'text-emerald-700 font-bold'}>
+                        {currentActiveDurability}/{activeRodObj.maxDurability} lượt
+                      </strong>
+                    </span>
+                    <span>
+                      Ra dây: <strong>{activeRodObj.lineSpeed}x</strong>
+                    </span>
+                  </div>
+                  <div className="w-full bg-black/10 h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        currentActiveDurability <= 0
+                          ? 'bg-red-500'
+                          : currentActiveDurability <= Math.round(activeRodObj.maxDurability * 0.3)
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
+                      }`}
+                      style={{
+                        width: `${Math.round((Math.max(0, currentActiveDurability) / activeRodObj.maxDurability) * 100)}%`,
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
+
+            {currentActiveDurability <= 0 && (
+              <button
+                type="button"
+                onClick={() => handleRodAction(activeRodObj.id)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:brightness-105 active:scale-95 text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <span>🔧</span>
+                <span>Sửa ngay ({formatNumber(activeRodObj.repairPrice ?? activeRodObj.repairCost ?? getRodRepairCost(activeRodObj))} Xu)</span>
+              </button>
+            )}
           </div>
 
           {/* Catalog of all Fishing Rods */}
@@ -188,29 +217,35 @@ export const UpgradeSkinView: React.FC<UpgradeSkinViewProps> = ({
                   }`}
                 >
                   {/* Top: Icon + Name + Badge + Price */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white border border-outline-variant/40 p-1 flex items-center justify-center shrink-0 shadow-xs overflow-hidden">
+                  <div className="flex items-start sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white border border-outline-variant/40 p-1.5 flex items-center justify-center shrink-0 shadow-2xs overflow-hidden">
                         {rod.image ? (
                           <img
                             src={rod.image}
                             alt={rod.name}
-                            className="w-full h-full object-contain hover:scale-110 transition-transform"
+                            className="w-full h-full object-contain hover:scale-105 transition-transform"
+                            draggable={false}
                           />
                         ) : (
                           <span className="text-2xl">{rod.icon}</span>
                         )}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <h4 className="font-black text-sm sm:text-base text-on-surface">
+                          <h4 className="font-black text-sm sm:text-base text-on-surface truncate">
                             {rod.name}
                           </h4>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant border border-outline-variant/30">
                             {rod.badge}
                           </span>
+                          {isEquipped && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500 text-white">
+                              ĐANG DÙNG
+                            </span>
+                          )}
                         </div>
-                        <p className="text-[11px] sm:text-xs text-on-surface-variant line-clamp-1 mt-0.5">
+                        <p className="text-[11px] sm:text-xs text-on-surface-variant line-clamp-2 mt-0.5 leading-tight">
                           {rod.description}
                         </p>
                       </div>
@@ -218,35 +253,50 @@ export const UpgradeSkinView: React.FC<UpgradeSkinViewProps> = ({
 
                     <div className="text-right shrink-0">
                       {isUnlocked ? (
-                        <span className="text-xs font-black text-emerald-700 bg-emerald-50 px-2 py-0.8 rounded-full border border-emerald-200 block">
+                        <span className="text-[11px] sm:text-xs font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 inline-flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[13px]">check_circle</span>
                           Đã sở hữu
                         </span>
                       ) : (
-                        <div className="flex items-center gap-1 text-xs sm:text-sm font-black text-amber-700">
-                          <span>🪙</span>
+                        <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs sm:text-sm font-black shadow-2xs">
+                          <CoinIcon size={16} />
                           <span>{rod.price === 0 ? 'Miễn phí' : formatNumber(rod.price)}</span>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Stats Pills Grid */}
+                  {/* Stats Pills Grid - Responsive 2 cols on mobile, 4 cols on tablet/desktop */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px] text-on-surface-variant font-medium">
-                    <div className="bg-surface-container/60 px-2 py-1 rounded-lg flex items-center gap-1 truncate">
-                      <span>🎣</span>
-                      <span>Độ bền: <strong className="text-on-surface">{rod.maxDurability}</strong></span>
+                    <div className="bg-surface-container/60 border border-outline-variant/20 px-2 py-1.5 rounded-xl flex items-center justify-between truncate">
+                      <span className="flex items-center gap-1">
+                        <span>🎣</span>
+                        <span>Độ bền:</span>
+                      </span>
+                      <strong className="text-on-surface font-bold ml-1">
+                        {isEquipped ? `${rodDur}/${rod.maxDurability}` : `${rod.maxDurability}`}
+                      </strong>
                     </div>
-                    <div className="bg-surface-container/60 px-2 py-1 rounded-lg flex items-center gap-1 truncate">
-                      <span>⚡</span>
-                      <span>Ra dây: <strong className="text-on-surface">{rod.lineSpeed}x</strong></span>
+                    <div className="bg-surface-container/60 border border-outline-variant/20 px-2 py-1.5 rounded-xl flex items-center justify-between truncate">
+                      <span className="flex items-center gap-1">
+                        <span>⚡</span>
+                        <span>Ra dây:</span>
+                      </span>
+                      <strong className="text-on-surface font-bold ml-1">{rod.lineSpeed}x</strong>
                     </div>
-                    <div className="bg-surface-container/60 px-2 py-1 rounded-lg flex items-center gap-1 truncate">
-                      <span>🐋</span>
-                      <span>Cá khủng: <strong className="text-on-surface">+{Math.round((rod.bigFishLuck || 0) * 100)}%</strong></span>
+                    <div className="bg-surface-container/60 border border-outline-variant/20 px-2 py-1.5 rounded-xl flex items-center justify-between truncate">
+                      <span className="flex items-center gap-1">
+                        <span>🐋</span>
+                        <span>Cá khủng:</span>
+                      </span>
+                      <strong className="text-on-surface font-bold ml-1">+{Math.round((rod.bigFishLuck || 0) * 100)}%</strong>
                     </div>
-                    <div className="bg-surface-container/60 px-2 py-1 rounded-lg flex items-center gap-1 truncate">
-                      <span>💪</span>
-                      <span>Kéo cá: <strong className="text-on-surface">+{Math.round(((rod.reelingPower || 1) - 1) * 100)}%</strong></span>
+                    <div className="bg-surface-container/60 border border-outline-variant/20 px-2 py-1.5 rounded-xl flex items-center justify-between truncate">
+                      <span className="flex items-center gap-1">
+                        <span>💪</span>
+                        <span>Kéo cá:</span>
+                      </span>
+                      <strong className="text-on-surface font-bold ml-1">+{Math.round(((rod.reelingPower || 1) - 1) * 100)}%</strong>
                     </div>
                   </div>
 
@@ -273,7 +323,7 @@ export const UpgradeSkinView: React.FC<UpgradeSkinViewProps> = ({
                         }`}
                       >
                         <span>🔧</span>
-                        <span>Sửa cần câu hỏng ({formatNumber(repairCost)} xu)</span>
+                        <span>Sửa cần câu hỏng ({formatNumber(repairCost)} Xu)</span>
                       </button>
                     ) : isUnlocked ? (
                       <button
@@ -297,13 +347,13 @@ export const UpgradeSkinView: React.FC<UpgradeSkinViewProps> = ({
                             : 'bg-surface-container-highest text-on-surface-variant opacity-60 cursor-not-allowed'
                         }`}
                       >
-                        <span>🪙</span>
+                        {rod.price > 0 && <CoinIcon size={16} />}
                         <span>
                           {rod.price === 0
                             ? 'Nhận & Trang Bị Miễn Phí'
                             : canAfford
-                            ? `Mua & Trang Bị (${formatNumber(rod.price)} xu)`
-                            : `Chưa đủ xu (${formatNumber(rod.price)} xu)`}
+                            ? `Mua & Trang Bị (${formatNumber(rod.price)} Xu)`
+                            : `Chưa đủ xu (${formatNumber(rod.price)} Xu)`}
                         </span>
                       </button>
                     )}
@@ -370,7 +420,7 @@ export const UpgradeSkinView: React.FC<UpgradeSkinViewProps> = ({
                       disabled={!canAfford}
                       onClick={() => onBuyUpgrade(item.id)}
                     >
-                      <span className="buy-fish-icon">🪙</span>
+                      <CoinIcon size={16} />
                       <span className="buy-cost-text">{formatNumber(cost)}</span>
                       <span className="buy-label">Nâng cấp</span>
                     </button>
@@ -471,8 +521,9 @@ export const UpgradeSkinView: React.FC<UpgradeSkinViewProps> = ({
                         onClick={() => onUnlockSkin(skin.id)}
                       >
                         <span>Mở khóa</span>
-                        <span className="unlock-price">
-                          🪙 {formatNumber(skin.unlockCost)}
+                        <span className="unlock-price flex items-center gap-1">
+                          <CoinIcon size={14} />
+                          <span>{formatNumber(skin.unlockCost)}</span>
                         </span>
                       </button>
                     )}

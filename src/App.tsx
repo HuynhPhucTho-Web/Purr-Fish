@@ -72,6 +72,12 @@ export const App: React.FC = () => {
     equipFashionDecorItem,
     buyOrEquipRod,
     useRodDurability,
+    basketCapacity,
+    fishSellMultiplier,
+    fishingBiteTimeReduction,
+    fishingReelAssist,
+    fishingSafeZoneBonus,
+    trophyLuckBonus,
     resetGame,
     logoutGame,
     importSave,
@@ -249,11 +255,16 @@ export const App: React.FC = () => {
             currentSkin={currentSkin}
             fish={state.fish}
             basketCount={basketCount}
+            maxBasketCapacity={basketCapacity}
             equippedRodId={equippedRodId}
             rodDurability={rodDurability}
             unlockedRods={unlockedRods}
             catFood={state.food}
             satietyExpiresAt={state.satietyExpiresAt}
+            biteTimeReduction={fishingBiteTimeReduction}
+            reelAssist={fishingReelAssist}
+            safeZoneBonus={fishingSafeZoneBonus}
+            trophyLuckBonus={trophyLuckBonus}
             onCatchFish={catchPondFish}
             onBuyRod={buyOrEquipRod}
             onUseRodDurability={useRodDurability}
@@ -271,6 +282,8 @@ export const App: React.FC = () => {
           <BackpackView
             basket={state.fishBasket || []}
             fish={state.fish}
+            basketCapacity={basketCapacity}
+            sellMultiplier={fishSellMultiplier}
             currentSkin={currentSkin}
             unlockedSkins={state.unlockedSkins}
             equippedRodId={equippedRodId}

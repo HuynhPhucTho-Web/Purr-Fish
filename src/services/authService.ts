@@ -83,8 +83,9 @@ export const authService = {
   ): Promise<UserProfileInfo> {
     const cleanUser = username.trim().toLowerCase();
     const cleanPass = pass.trim();
-    const finalCatName = (catName && catName.trim()) ? catName.trim() : 'Mèo Cưng';
-    const displayName = finalCatName;
+    const finalCatName = (catName && catName.trim()) 
+      ? catName.trim() 
+      : (cleanUser ? `Mèo ${cleanUser}` : 'Mèo Cưng');
     const photoURL = chosenAvatar || CAT_AVATARS[0];
 
     if (!cleanUser || cleanUser.length < 3) {
@@ -96,7 +97,7 @@ export const authService = {
 
     const localUsers = getLocalUsers();
     if (localUsers[cleanUser]) {
-      throw new Error('Tên tài khoản này đã tồn tại! Vui lòng chọn tên khác.');
+      throw new Error(`Tên tài khoản "${cleanUser}" đã có trên máy này! Vui lòng chuyển sang tab Đăng Nhập hoặc chọn tên khác.`);
     }
 
     let uid = '';
@@ -107,29 +108,44 @@ export const authService = {
 
     try {
       const cred = await createUserWithEmailAndPassword(auth, emailSynthetic, firebasePass);
-      await updateProfile(cred.user, { displayName, photoURL });
+      await updateProfile(cred.user, { displayName: finalCatName, photoURL });
       uid = cred.user.uid;
     } catch (err: any) {
       if (err?.code === 'auth/email-already-in-use') {
-        try {
-          const cred = await signInWithEmailAndPassword(auth, emailSynthetic, firebasePass);
-          await updateProfile(cred.user, { displayName, photoURL });
-          uid = cred.user.uid;
-        } catch (loginErr: any) {
-          if (loginErr?.code === 'auth/wrong-password' || loginErr?.code === 'auth/invalid-credential') {
-            throw new Error('Tên tài khoản này đã có người đăng ký với mật khẩu khác! Vui lòng chọn tên khác.');
-          }
-          throw loginErr;
+        // Thử đăng nhập nếu tài khoản đã tồn tại trên Firebase
+        let signedIn = false;
+        const passCandidates = [
+          firebasePass,
+          cleanPass,
+          `${cleanPass}0000`,
+        ].filter((p, i, a) => p.length >= 6 && a.indexOf(p) === i);
+
+        for (const p of passCandidates) {
+          try {
+            const cred = await signInWithEmailAndPassword(auth, emailSynthetic, p);
+            await updateProfile(cred.user, { displayName: finalCatName, photoURL });
+            uid = cred.user.uid;
+            signedIn = true;
+            break;
+          } catch (e) {}
+        }
+
+        if (!signedIn) {
+          throw new Error('Tên tài khoản này đã có người đăng ký trên máy chủ! Vui lòng chọn tên khác hoặc chuyển sang tab Đăng Nhập.');
         }
       } else {
-        console.error('Firebase Auth error:', err);
-        throw new Error(err?.message || 'Lỗi đăng ký tài khoản trên Firebase!');
+        console.warn('Firebase Auth create error, using local fallback:', err);
+        uid = `local_${cleanUser}_${Date.now()}`;
       }
+    }
+
+    if (!uid) {
+      uid = `local_${cleanUser}_${Date.now()}`;
     }
 
     const newEntry: SimpleLocalUser = {
       username: cleanUser,
-      displayName,
+      displayName: finalCatName,
       catName: finalCatName,
       pass: cleanPass,
       uid,
@@ -143,43 +159,53 @@ export const authService = {
     localStorage.setItem(CURRENT_LOCAL_USER_KEY, JSON.stringify(newEntry));
 
     // Đồng bộ hồ sơ người dùng và TOÀN BỘ dữ liệu game vào Firebase Firestore theo rule /users/{userId}
-    const fullSaveData = initialSaveData || DEFAULT_SAVE_DATA;
-    try {
-      const userRef = doc(db, 'users', uid);
-      await setDoc(userRef, {
-        ...fullSaveData,
-        uid,
-        username: cleanUser,
-        catName: finalCatName,
-        displayName: finalCatName,
-        catAvatar: photoURL,
-        photoURL,
-        createdAt: Date.now(),
-        lastLoginAt: Date.now(),
-        lastSaved: Date.now(),
-      }, { merge: true });
+    const fullSaveData = {
+      ...(initialSaveData || DEFAULT_SAVE_DATA),
+      catName: finalCatName,
+      displayName: finalCatName,
+      username: cleanUser,
+      catAvatar: photoURL,
+      photoURL,
+    };
 
-      // Đồng bộ Bảng Xếp Hạng Firestore theo rule /leaderboards/{userId}
-      const levelInfo = calculateLevelFromTotalXp(fullSaveData.xp || 0);
-      const catStage = getCatGrowthStage(levelInfo.level);
-      const lbRef = doc(db, 'leaderboards', uid);
-      await setDoc(lbRef, {
-        uid,
-        displayName: finalCatName,
-        catName: finalCatName,
-        username: cleanUser,
-        photoURL,
-        level: Math.max(1, levelInfo.level),
-        xp: Math.max(0, fullSaveData.xp || 0),
-        rankTierKey: levelInfo.rankTier.key,
-        rankTierName: levelInfo.rankTier.name,
-        rankBadge: levelInfo.rankTier.badge,
-        coins: Math.max(0, Number(fullSaveData.fish ?? fullSaveData.coins) || 0),
-        biggestFishKg: Math.max(0, Number(fullSaveData.biggestFishKg) || 0),
-        equippedSkin: fullSaveData.equippedSkin || 'orange_tabby',
-        catStageLabel: catStage.label,
-        updatedAt: Date.now(),
-      }, { merge: true });
+    try {
+      if (auth.currentUser && auth.currentUser.uid === uid) {
+        const userRef = doc(db, 'users', uid);
+        await setDoc(userRef, {
+          ...fullSaveData,
+          uid,
+          username: cleanUser,
+          catName: finalCatName,
+          displayName: finalCatName,
+          catAvatar: photoURL,
+          photoURL,
+          createdAt: Date.now(),
+          lastLoginAt: Date.now(),
+          lastSaved: Date.now(),
+        }, { merge: true });
+
+        // Đồng bộ Bảng Xếp Hạng Firestore theo rule /leaderboards/{userId}
+        const levelInfo = calculateLevelFromTotalXp(fullSaveData.xp || 0);
+        const catStage = getCatGrowthStage(levelInfo.level);
+        const lbRef = doc(db, 'leaderboards', uid);
+        await setDoc(lbRef, {
+          uid,
+          displayName: finalCatName,
+          catName: finalCatName,
+          username: cleanUser,
+          photoURL,
+          level: Math.max(1, levelInfo.level),
+          xp: Math.max(0, fullSaveData.xp || 0),
+          rankTierKey: levelInfo.rankTier.key,
+          rankTierName: levelInfo.rankTier.name,
+          rankBadge: levelInfo.rankTier.badge,
+          coins: Math.max(0, Number(fullSaveData.fish ?? fullSaveData.coins) || 0),
+          biggestFishKg: Math.max(0, Number(fullSaveData.biggestFishKg) || 0),
+          equippedSkin: fullSaveData.equippedSkin || 'orange_tabby',
+          catStageLabel: catStage.label,
+          updatedAt: Date.now(),
+        }, { merge: true });
+      }
     } catch (e) {
       console.warn('Lỗi lưu profile và dữ liệu lên Firestore:', e);
     }
@@ -201,58 +227,130 @@ export const authService = {
   async loginSimpleAccount(username: string, pass: string): Promise<UserProfileInfo> {
     const cleanUser = username.trim().toLowerCase();
     const cleanPass = pass.trim();
-    const emailSynthetic = `${cleanUser}@purrfish.com`;
-    const firebasePass = cleanPass.length >= 6 ? cleanPass : `${cleanPass}000000`.slice(0, 8);
+
+    if (!cleanUser) {
+      throw new Error('Vui lòng nhập tên tài khoản!');
+    }
+    if (!cleanPass) {
+      throw new Error('Vui lòng nhập mật khẩu!');
+    }
 
     const localUsers = getLocalUsers();
     const target = localUsers[cleanUser];
 
-    let uid = target?.uid || '';
-    let displayName = target?.displayName || cleanUser;
-    let photoURL = target?.photoURL || CAT_AVATARS[0];
+    // Mật khẩu và email variants để thử đăng nhập Firebase Auth
+    const passVariants = [
+      cleanPass.length >= 6 ? cleanPass : `${cleanPass}000000`.slice(0, 8),
+      cleanPass,
+      `${cleanPass}0000`,
+      `${cleanPass}000000`,
+    ].filter((p, i, arr) => p.length >= 6 && arr.indexOf(p) === i);
 
-    // Ưu tiên đăng nhập vào Firebase Auth
-    try {
-      const cred = await signInWithEmailAndPassword(auth, emailSynthetic, firebasePass);
-      uid = cred.user.uid;
-      displayName = cred.user.displayName || displayName;
-      photoURL = cred.user.photoURL || photoURL;
-    } catch (err: any) {
-      if (err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-credential') {
-        throw new Error('Mật khẩu không chính xác!');
-      }
-      if (!target) {
-        if (err?.code === 'auth/user-not-found') {
-          throw new Error('Tài khoản không tồn tại trên hệ thống! Vui lòng chọn Tạo Mới.');
+    const emailVariants = [
+      `${cleanUser}@purrfish.com`,
+      `${cleanUser}@purrfish.local`,
+      `${cleanUser}@purrfish`,
+    ];
+
+    let firebaseUser: User | null = null;
+    let authError: any = null;
+
+    // 1. Thử đăng nhập vào Firebase Auth
+    for (const email of emailVariants) {
+      for (const p of passVariants) {
+        try {
+          const cred = await signInWithEmailAndPassword(auth, email, p);
+          firebaseUser = cred.user;
+          break;
+        } catch (err: any) {
+          authError = err;
         }
-        throw new Error(err?.message || 'Đăng nhập Firebase thất bại!');
       }
-      if (target.pass !== cleanPass) {
-        throw new Error('Mật khẩu không chính xác!');
-      }
+      if (firebaseUser) break;
     }
 
-    const updatedEntry: SimpleLocalUser = {
-      username: cleanUser,
-      displayName,
-      pass: cleanPass,
-      uid,
-      photoURL,
-      createdAt: target?.createdAt || Date.now(),
-    };
-    localUsers[cleanUser] = updatedEntry;
-    saveLocalUsers(localUsers);
-    localStorage.setItem(CURRENT_LOCAL_USER_KEY, JSON.stringify(updatedEntry));
+    // 2. Nếu đăng nhập Firebase Auth thành công:
+    if (firebaseUser) {
+      const uid = firebaseUser.uid;
+      const displayName = firebaseUser.displayName || target?.displayName || target?.catName || cleanUser;
+      const catName = target?.catName || firebaseUser.displayName || target?.displayName || 'Mèo Cưng';
+      const photoURL = firebaseUser.photoURL || target?.photoURL || CAT_AVATARS[0];
 
-    return {
-      uid,
-      email: `${cleanUser}@purrfish.com`,
-      displayName,
-      catName: target?.catName || displayName,
-      username: cleanUser,
-      photoURL,
-      isAnonymous: false,
-    };
+      const updatedEntry: SimpleLocalUser = {
+        username: cleanUser,
+        displayName,
+        catName,
+        pass: cleanPass,
+        uid,
+        photoURL,
+        createdAt: target?.createdAt || Date.now(),
+      };
+      localUsers[cleanUser] = updatedEntry;
+      saveLocalUsers(localUsers);
+      localStorage.setItem(CURRENT_LOCAL_USER_KEY, JSON.stringify(updatedEntry));
+
+      return {
+        uid,
+        email: firebaseUser.email || `${cleanUser}@purrfish.com`,
+        displayName,
+        catName,
+        username: cleanUser,
+        photoURL,
+        isAnonymous: false,
+      };
+    }
+
+    // 3. Nếu Firebase Auth thất bại, nhưng tài khoản ĐÃ TỒN TẠI trên máy (target):
+    if (target) {
+      // Kiểm tra mật khẩu đã lưu trên máy
+      if (target.pass && target.pass !== cleanPass) {
+        throw new Error('Mật khẩu không chính xác! Vui lòng thử lại.');
+      }
+
+      // Người chơi nhập ĐÚNG mật khẩu đã lưu trên máy:
+      // Tự động tạo hoặc phục hồi Firebase Auth để đồng bộ Cloud
+      const canonicalEmail = `${cleanUser}@purrfish.com`;
+      const canonicalPass = cleanPass.length >= 6 ? cleanPass : `${cleanPass}000000`.slice(0, 8);
+      let resolvedUid = target.uid;
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, canonicalEmail, canonicalPass);
+        await updateProfile(cred.user, {
+          displayName: target.catName || target.displayName || cleanUser,
+          photoURL: target.photoURL || CAT_AVATARS[0],
+        });
+        resolvedUid = cred.user.uid;
+        target.uid = resolvedUid;
+      } catch (createErr) {
+        // Nếu không tạo được Firebase (ví dụ email đã dùng với pass khác trên cloud):
+        // Thử anonymous auth để có auth context hợp lệ
+        try {
+          if (!auth.currentUser) {
+            await signInAnonymously(auth);
+          }
+        } catch {}
+      }
+
+      localUsers[cleanUser] = target;
+      saveLocalUsers(localUsers);
+      localStorage.setItem(CURRENT_LOCAL_USER_KEY, JSON.stringify(target));
+
+      return {
+        uid: resolvedUid,
+        email: canonicalEmail,
+        displayName: target.displayName || target.catName || cleanUser,
+        catName: target.catName || target.displayName || 'Mèo Cưng',
+        username: cleanUser,
+        photoURL: target.photoURL || CAT_AVATARS[0],
+        isAnonymous: false,
+      };
+    }
+
+    // 4. Nếu không có tài khoản trên máy VÀ Firebase Auth cũng không đăng nhập được:
+    if (authError?.code === 'auth/user-not-found') {
+      throw new Error(`Tài khoản "${cleanUser}" chưa tồn tại! Vui lòng chọn Tạo Mới để bắt đầu.`);
+    }
+
+    throw new Error('Tài khoản hoặc mật khẩu không chính xác! Vui lòng kiểm tra lại.');
   },
 
   /**

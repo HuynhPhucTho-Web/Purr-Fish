@@ -24,6 +24,16 @@ import {
   calculateAutoFishRate,
   calculateComboMultiplier,
   formatNumber,
+  getBasketCapacity,
+  getFishSellMultiplier,
+  getRodDurabilitySaveChance,
+  getFishingBiteTimeReduction,
+  getFishingReelAssist,
+  getFishingSafeZoneBonus,
+  getTrophyLuckBonus,
+  getCatMetabolismReduction,
+  getCatCritChance,
+  getShopDiscountMultiplier,
 } from '../utils/economy';
 import {
   loadGame,
@@ -92,10 +102,13 @@ export function useGameState() {
   const loadUserDataFromCloud = useCallback(async (user: UserProfileInfo) => {
     if (!user || user.isAnonymous) return null;
     const cloudData = await cloudSaveService.loadFromCloud(user.uid);
+    const userCatName = (user.catName && user.catName !== 'Mèo Cưng')
+      ? user.catName
+      : (cloudData?.catName && cloudData.catName !== 'Mèo Cưng')
+      ? cloudData.catName
+      : (user.displayName || cloudData?.catName || 'Mèo Cưng');
+
     if (cloudData) {
-      const userCatName = (cloudData.catName && cloudData.catName !== 'Mèo Cưng')
-        ? cloudData.catName
-        : (user.displayName || cloudData.catName || 'Mèo Cưng');
       const restored: GameSaveData = {
         ...DEFAULT_SAVE_DATA,
         ...cloudData,
@@ -109,6 +122,20 @@ export function useGameState() {
       setData(restored);
       saveGame(restored);
       return restored;
+    } else {
+      // Khi vừa tạo tài khoản hoặc chưa có cloud data: cập nhật state hiện tại với thông tin user mới
+      setData((prev) => {
+        const next: GameSaveData = {
+          ...prev,
+          catName: userCatName,
+          displayName: userCatName,
+          username: user.username || prev.username,
+          catAvatar: user.photoURL || prev.catAvatar,
+          lastSaved: Date.now(),
+        };
+        saveGame(next);
+        return next;
+      });
     }
     return null;
   }, []);
@@ -122,7 +149,9 @@ export function useGameState() {
         if (!restored) {
           // Chưa có save trên cloud (mới tạo tài khoản), lập tức lưu save local hiện tại lên cloud!
           const currentLocal = dataRef.current;
-          const userCatName = (currentLocal.catName && currentLocal.catName !== 'Mèo Cưng')
+          const userCatName = (user.catName && user.catName !== 'Mèo Cưng')
+            ? user.catName
+            : (currentLocal.catName && currentLocal.catName !== 'Mèo Cưng')
             ? currentLocal.catName
             : (user.displayName || currentLocal.catName || 'Mèo Cưng');
           const lvl = calculateLevelFromTotalXp(currentLocal.xp || 0);
@@ -187,9 +216,21 @@ export function useGameState() {
     const targetData = overrideData || dataRef.current;
     const lvl = calculateLevelFromTotalXp(targetData.xp || 0);
     const stg = getCatGrowthStage(lvl.level);
-    const userCatName = (targetData.catName && targetData.catName !== 'Mèo Cưng')
+    const userCatName = (targetUser.catName && targetUser.catName !== 'Mèo Cưng')
+      ? targetUser.catName
+      : (targetData.catName && targetData.catName !== 'Mèo Cưng')
       ? targetData.catName
       : (targetUser.displayName || targetData.catName || 'Mèo Cưng');
+
+    if (dataRef.current.catName !== userCatName) {
+      dataRef.current.catName = userCatName;
+      dataRef.current.displayName = userCatName;
+      setData((prev) => ({
+        ...prev,
+        catName: userCatName,
+        displayName: userCatName,
+      }));
+    }
 
     const fullData: GameSaveData = {
       ...targetData,
@@ -364,6 +405,13 @@ export function useGameState() {
           waterDecay = naturalRatePerSec * 5;
         }
 
+        // Bổ trợ giảm hao hụt từ Kỹ năng Dạ Dày Bền Bỉ (slow_metabolism)
+        const metabolismReduction = getCatMetabolismReduction(prev.upgrades);
+        if (metabolismReduction > 0) {
+          foodDecay *= (1 - metabolismReduction);
+          waterDecay *= (1 - metabolismReduction);
+        }
+
         let newFood = Math.max(0, Math.round((prev.food - foodDecay) * 100) / 100);
         let newWater = Math.max(0, Math.round((prev.water - waterDecay) * 100) / 100);
         let activePlan = prev.activeMealPlan ? { ...prev.activeMealPlan } : null;
@@ -438,8 +486,9 @@ export function useGameState() {
       const isSatiated = (data.satietyExpiresAt || 0) > Date.now();
       const isExhausted = !isSatiated && (data.food < 15 || data.water < 15);
       const hungerFactor = (isSatiated || (data.food >= 60 && data.water >= 60)) ? 1.0 : 0.6;
-      const isCrit = !isExhausted && Math.random() < (0.06 + (isFrenzy ? 0.14 : 0));
-      const critMultiplier = isCrit ? 1.6 : 1.0;
+      const critBonus = getCatCritChance(data.upgrades);
+      const isCrit = !isExhausted && Math.random() < (0.05 + critBonus + (isFrenzy ? 0.12 : 0));
+      const critMultiplier = isCrit ? 1.5 : 1.0;
 
       // Nếu đói khát kiệt sức: 0 xu thưởng! Bắt buộc phải cho ăn uống
       const earned = isExhausted
@@ -505,7 +554,7 @@ export function useGameState() {
             id: floatId,
             x: clientX,
             y: clientY,
-            text: isExhausted ? '0 🪙 Kiệt sức!' : isCrit ? `+${earned} 🪙 CRIT!` : `+${earned} 🪙`,
+            text: isExhausted ? '0 Xu Kiệt sức!' : isCrit ? `+${earned} Xu CRIT!` : `+${earned} Xu`,
             isCrit: isCrit || isFrenzy,
             fishImage: '',
             fishName: isExhausted ? '😿 Mèo đói lả / Khát khô!' : isCrit ? '💖 Siêu cưng!' : '🐾 Vuốt ve',
@@ -570,7 +619,7 @@ export function useGameState() {
               id: floatId,
               x: clientX,
               y: clientY,
-              text: `+${gained} 🪙`,
+              text: `+${gained} Xu`,
               isCrit: gained > 1,
               fishImage: toy?.image || '',
               fishName: `Chơi ${toyName}`,
@@ -639,7 +688,8 @@ export function useGameState() {
 
       setData((prev) => {
         const safeBasket = Array.isArray(prev.fishBasket) ? prev.fishBasket : [];
-        const newBasket = [caughtItem, ...safeBasket].slice(0, 50); // Giữ tối đa 50 con trong giỏ
+        const maxCapacity = getBasketCapacity(prev.upgrades);
+        const newBasket = [caughtItem, ...safeBasket].slice(0, maxCapacity); // Giữ tối đa theo sức chứa giỏ
         const newBiggest = Math.max(prev.biggestFishKg || 0, caughtItem.weightKg);
         const newTotalCaught = (prev.totalFishCaught || 0) + 1;
         const newCoins = prev.fish;
@@ -662,7 +712,7 @@ export function useGameState() {
     [data.settings.hapticsEnabled]
   );
 
-  // Bán 1 con cá trong giỏ lấy tiền
+  // Bán 1 con cá trong giỏ lấy tiền (áp dụng kỹ năng fish_appraiser)
   const sellFish = useCallback((instanceId: string): number => {
     let earned = 0;
     setData((prev) => {
@@ -670,11 +720,12 @@ export function useGameState() {
       const idx = basket.findIndex((f) => f.instanceId === instanceId);
       if (idx === -1) return prev;
       const target = basket[idx];
-      earned = target.sellPrice;
+      const sellMult = getFishSellMultiplier(prev.upgrades);
+      earned = Math.round(target.sellPrice * sellMult);
       const newBasket = basket.filter((_, i) => i !== idx);
       const newCoins = (prev.fish || 0) + earned;
 
-      soundManager.playUpgrade();
+      soundManager.playSellFish();
       return {
         ...prev,
         fish: newCoins,
@@ -688,7 +739,7 @@ export function useGameState() {
     return earned;
   }, []);
 
-  // Bán tất cả cá trong giỏ
+  // Bán tất cả cá trong giỏ (áp dụng kỹ năng fish_appraiser)
   const sellAllFish = useCallback((): { count: number; totalEarned: number } => {
     let count = 0;
     let totalEarned = 0;
@@ -696,10 +747,11 @@ export function useGameState() {
       const basket = Array.isArray(prev.fishBasket) ? prev.fishBasket : [];
       if (basket.length === 0) return prev;
       count = basket.length;
-      totalEarned = basket.reduce((sum, f) => sum + f.sellPrice, 0);
+      const sellMult = getFishSellMultiplier(prev.upgrades);
+      totalEarned = Math.round(basket.reduce((sum, f) => sum + f.sellPrice, 0) * sellMult);
       const newCoins = (prev.fish || 0) + totalEarned;
 
-      soundManager.playUpgrade();
+      soundManager.playSellFish();
       return {
         ...prev,
         fish: newCoins,
@@ -713,19 +765,20 @@ export function useGameState() {
     return { count, totalEarned };
   }, []);
 
-  // Mua thức ăn vào túi theo số lượng (x1, x5, x10,...)
+  // Mua thức ăn vào túi theo số lượng (x1, x5, x10,...) (áp dụng shop_discount)
   const buyFoodToInventory = useCallback(
     (foodItem: FoodItem, quantity: number = 1): boolean => {
       const qty = Math.max(1, Math.floor(quantity));
-      const totalCost = foodItem.price * qty;
       let success = false;
 
       setData((prev) => {
+        const discountMult = getShopDiscountMultiplier(prev.upgrades);
+        const totalCost = Math.max(1, Math.round(foodItem.price * qty * discountMult));
         if (prev.fish < totalCost) {
           return prev;
         }
         success = true;
-        soundManager.playUpgrade();
+        soundManager.playPurchaseSuccess();
         if (data.settings.hapticsEnabled) soundManager.triggerHaptic(25);
 
         const currentQty = prev.foodInventory?.[foodItem.id] || 0;
@@ -929,7 +982,7 @@ export function useGameState() {
       setTimeout(() => {
         soundManager.playCatMeow(currentSkinObj.sound);
       }, 180);
-      soundManager.playUpgrade();
+      soundManager.playPurchaseSuccess();
       if (data.settings.hapticsEnabled) soundManager.triggerHaptic(40);
 
       const newCoins = prev.fish - plan.price;
@@ -1002,12 +1055,14 @@ export function useGameState() {
         if (currentUnlocked.includes(rod.id)) {
           const isBroken = prev.equippedRodId === rod.id && (prev.rodDurability ?? 10) <= 0;
           if (isBroken) {
-            const repairCost = rod.repairPrice ?? rod.repairCost ?? getRodRepairCost(rod);
+            const rawRepairCost = rod.repairPrice ?? rod.repairCost ?? getRodRepairCost(rod);
+            const discountMult = getShopDiscountMultiplier(prev.upgrades);
+            const repairCost = Math.round(rawRepairCost * discountMult);
             if (repairCost > 0 && prev.fish < repairCost) {
               res = { success: false, message: `Không đủ xu để sửa cần (${formatNumber(repairCost)} xu)!` };
               return prev;
             }
-            soundManager.playUpgrade();
+            soundManager.playPurchaseSuccess();
             const newCoins = prev.fish - repairCost;
             res = { success: true, message: `Đã sửa ${rod.name} (${rod.maxDurability}/${rod.maxDurability} lượt) với giá ${formatNumber(repairCost)} xu!` };
             return {
@@ -1034,7 +1089,7 @@ export function useGameState() {
           return prev;
         }
 
-        soundManager.playUnlock();
+        soundManager.playPurchaseSuccess();
         if (data.settings.hapticsEnabled) soundManager.triggerHaptic(50);
         const newCoins = prev.fish - rod.price;
         res = {
@@ -1057,11 +1112,17 @@ export function useGameState() {
     [data.settings.hapticsEnabled]
   );
 
-  // Giảm độ bền của cần sau mỗi lần quăng (dù trúng hay hụt)
+  // Giảm độ bền của cần sau mỗi lần quăng (áp dụng cơ hội bảo toàn từ rod_care)
   const useRodDurability = useCallback((): number => {
     let remaining = 0;
     setData((prev) => {
       const current = typeof prev.rodDurability === 'number' ? prev.rodDurability : 10;
+      const saveChance = getRodDurabilitySaveChance(prev.upgrades);
+      if (saveChance > 0 && Math.random() < saveChance) {
+        // May mắn bảo toàn độ bền cần câu!
+        remaining = current;
+        return prev;
+      }
       remaining = Math.max(0, current - 1);
       return {
         ...prev,
@@ -1143,7 +1204,7 @@ export function useGameState() {
           return prev;
         }
 
-        soundManager.playUnlock();
+        soundManager.playPurchaseSuccess();
         if (data.settings.hapticsEnabled) soundManager.triggerHaptic(50);
 
         const newCoins = Math.max(0, prev.fish - item.price);
@@ -1284,17 +1345,20 @@ export function useGameState() {
     });
   }, [data.settings.hapticsEnabled]);
 
-  // Buy Upgrade
+  // Buy Upgrade (với giới hạn maxLevel & hệ số giá riêng)
   const buyUpgrade = useCallback((upgradeId: string) => {
     const upgrade = UPGRADES.find((u) => u.id === upgradeId);
     if (!upgrade) return false;
 
+    let success = false;
     setData((prev) => {
       const currentLevel = prev.upgrades[upgradeId] || 0;
-      const cost = calculateUpgradeCost(upgrade.baseCost, currentLevel);
+      if (currentLevel >= upgrade.maxLevel) return prev; // Đã đạt cấp tối đa!
 
+      const cost = calculateUpgradeCost(upgrade.baseCost, currentLevel, upgrade.costMultiplier || 1.65);
       if (prev.fish < cost) return prev; // Not enough fish
 
+      success = true;
       const newFish = prev.fish - cost;
       const newUpgrades = {
         ...prev.upgrades,
@@ -1307,7 +1371,7 @@ export function useGameState() {
         newUnlockedSkins.push('royal_golden');
       }
 
-      soundManager.playUpgrade();
+      soundManager.playPurchaseSuccess();
       return {
         ...prev,
         fish: newFish,
@@ -1315,7 +1379,7 @@ export function useGameState() {
         unlockedSkins: newUnlockedSkins,
       };
     });
-    return true;
+    return success;
   }, []);
 
   // Unlock Skin
@@ -1327,7 +1391,7 @@ export function useGameState() {
       if (prev.unlockedSkins.includes(skinId)) return prev;
       if (prev.fish < skin.unlockCost) return prev;
 
-      soundManager.playUnlock();
+      soundManager.playPurchaseSuccess();
       setTimeout(() => {
         soundManager.playCatMeow(skin.sound);
       }, 250);
@@ -1614,6 +1678,13 @@ export function useGameState() {
     satietyFoodTier: data.satietyFoodTier || 'low',
     satietyFoodRate: data.satietyFoodRate || (100 / 2700),
     satietyWaterRate: data.satietyWaterRate || (100 / 2700),
+    basketCapacity: getBasketCapacity(data.upgrades),
+    fishSellMultiplier: getFishSellMultiplier(data.upgrades),
+    fishingBiteTimeReduction: getFishingBiteTimeReduction(data.upgrades),
+    fishingReelAssist: getFishingReelAssist(data.upgrades),
+    fishingSafeZoneBonus: getFishingSafeZoneBonus(data.upgrades),
+    trophyLuckBonus: getTrophyLuckBonus(data.upgrades),
+    shopDiscountMultiplier: getShopDiscountMultiplier(data.upgrades),
     claimFreeWaterGift,
     buyFashionDecorItem,
     equipFashionDecorItem,

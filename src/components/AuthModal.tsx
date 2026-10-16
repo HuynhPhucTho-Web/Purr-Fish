@@ -80,7 +80,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const user = await authService.registerSimpleAccount(cleanUser, cleanPass, catName, defaultAvatar, gameState);
       soundManager.playUnlock();
       setSuccessMessage(`🎉 Chào mừng "${user.displayName}"! Đã tạo tài khoản & đăng nhập thành công.`);
-      if (onSyncNow) onSyncNow(user);
+      if (onLoginSuccess) {
+        await onLoginSuccess(user);
+      }
+      if (onSyncNow) {
+        await onSyncNow(user);
+      }
       setTimeout(() => {
         onClose();
       }, 600);
@@ -196,7 +201,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Header */}
         <div className="modal-header">
           <div className="modal-title-wrap">
-            <span className="modal-icon">{isLoggedIn ? '👑' : tab === 'register' ? '📝' : '🔑'}</span>
+            <img
+              src="/images/logo-purr-fish.jpg"
+              alt="Purr-Fish Logo"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border-2 border-amber-300 shadow-xs shrink-0"
+              draggable={false}
+            />
             <div>
               <h3>
                 {isLoggedIn
@@ -225,7 +235,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {currentUser.photoURL ? (
                   <img src={currentUser.photoURL} alt="Avatar" className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-3xl">🐱</span>
+                  <img src="/images/logo-purr-fish.jpg" alt="Avatar" className="w-full h-full object-cover" />
                 )}
                 <span className="absolute bottom-0 inset-x-0 bg-amber-500/90 text-white text-[10px] font-black py-0.5 text-center leading-none">
                   Lv.{level}
@@ -280,6 +290,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           ) : (
             /* NẾU CHƯA ĐĂNG NHẬP: HIỂN THỊ TAB TẠO MỚI / ĐĂNG NHẬP */
             <>
+              {/* Game Branding & Logo */}
+              <div className="flex flex-col items-center justify-center pt-1 pb-3 text-center">
+                <img
+                  src="/images/logo-purr-fish.jpg"
+                  alt="Purr-Fish Logo"
+                  className="w-16 h-16 rounded-2xl shadow-md border-2 border-amber-300 object-cover mb-1.5"
+                  draggable={false}
+                />
+                <h4 className="text-base font-black text-amber-950 tracking-tight">Purr-Fish</h4>
+                <p className="text-xs text-slate-500 font-medium">Trò chơi nuôi mèo & câu cá thư giãn</p>
+              </div>
+
               {/* Tab Selector */}
               <div className="auth-tabs-row">
                 <button
@@ -319,14 +341,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <button
                         key={acc.username}
                         type="button"
-                        className="text-xs bg-white hover:bg-orange-100 border border-orange-300 text-orange-900 font-bold px-2 py-0.5 rounded-full cursor-pointer transition-colors"
+                        className="text-xs bg-white hover:bg-orange-100 border border-orange-300 text-orange-950 font-bold px-2.5 py-1 rounded-full cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
                         onClick={() => {
                           soundManager.playPop();
                           setUsername(acc.username);
                           setPassword(acc.pass);
+                          setErrorMessage(null);
                         }}
+                        title={`Tài khoản: ${acc.username} • Mèo: ${acc.catName || acc.displayName}`}
                       >
-                        👤 {acc.displayName}
+                        <span>🐾</span>
+                        <span>{acc.catName || acc.displayName}</span>
+                        <span className="text-[10px] text-orange-600 font-semibold">(@{acc.username})</span>
                       </button>
                     ))}
                   </div>
@@ -363,6 +389,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       onClick={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
                     />
+                    <span className="text-[11px] text-amber-800 font-medium mt-1 block">
+                      🐱 Tên này sẽ xuất hiện trên thanh phòng mèo, nút clicker và Bảng Xếp Hạng
+                    </span>
                   </div>
                 )}
 

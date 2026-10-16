@@ -125,7 +125,12 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
       {/* Header */}
       <div className="view-header-bar">
         <div className="view-title-wrap">
-          <span className="view-title-icon">👤</span>
+          <img
+            src="/images/logo-purr-fish.jpg"
+            alt="Purr-Fish Logo"
+            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border-2 border-amber-300 shadow-xs shrink-0"
+            draggable={false}
+          />
           <div>
             <h2 className="view-title">Tài Khoản & Cài Đặt Trò Chơi</h2>
             <p className="view-subtitle">Quản lý hồ sơ người chơi, lưu trữ đám mây & tùy biến</p>
@@ -178,7 +183,7 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
                   {currentUser.photoURL ? (
                     <img src={currentUser.photoURL} alt={currentUser.displayName} className="w-full h-full object-cover" />
                   ) : (
-                    '👑'
+                    <img src="/images/logo-purr-fish.jpg" alt="Purr-Fish" className="w-full h-full object-cover" />
                   )}
                 </div>
 
@@ -274,9 +279,12 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
             /* Chế Độ Chơi Thử: Tránh trùng lặp form, chỉ hiển thị thông báo & nút mở Modal duy nhất */
             <div className="auth-forms-container">
               <div className="bg-gradient-to-b from-amber-50/90 via-orange-50/70 to-amber-50/90 border-2 border-dashed border-amber-300 rounded-3xl p-6 text-center flex flex-col items-center gap-3 shadow-sm">
-                <div className="w-16 h-16 rounded-full bg-amber-100/90 border border-amber-300 flex items-center justify-center text-3xl shadow-xs">
-                  🐾
-                </div>
+                <img
+                  src="/images/logo-purr-fish.jpg"
+                  alt="Purr-Fish Logo"
+                  className="w-16 h-16 rounded-2xl border-2 border-amber-300 object-cover shadow-md"
+                  draggable={false}
+                />
 
                 <div>
                   <h3 className="text-base sm:text-lg font-black text-amber-950">
@@ -517,6 +525,18 @@ export const AccountSettingsView: React.FC<AccountSettingsViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Game Branding & Logo Footer */}
+      <div className="flex flex-col items-center justify-center pt-6 pb-2 text-center mt-4">
+        <img
+          src="/images/logo-purr-fish.jpg"
+          alt="Purr-Fish Logo"
+          className="w-12 h-12 rounded-2xl shadow-xs border border-amber-300 object-cover mb-1.5"
+          draggable={false}
+        />
+        <span className="text-sm font-black text-amber-950">Purr-Fish</span>
+        <span className="text-xs text-slate-500 font-medium">Phiên bản 1.0.0 • Trò chơi nuôi mèo & câu cá pastel</span>
+      </div>
     </div>
   );
 };

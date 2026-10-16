@@ -1405,7 +1405,7 @@ export function getToyRewardConfig(toy?: FashionDecorItem): ToyRewardConfig {
     ratePercent,
     coinAmount: 1,
     maxCoins,
-    label: `Tỉ lệ cộng xu: ${ratePercent}%${maxCoins > 1 ? ' (+1~2 🪙)' : ' (+1 🪙)'}`,
+    label: `Tỉ lệ cộng xu: ${ratePercent}%${maxCoins > 1 ? ' (+1~2 Xu)' : ' (+1 Xu)'}`,
   };
 }
 

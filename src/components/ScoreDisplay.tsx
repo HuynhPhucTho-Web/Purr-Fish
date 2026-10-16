@@ -37,13 +37,18 @@ export const ScoreDisplay: React.FC<ScoreDisplayProps> = ({
       <div className="h-14 sm:h-16 max-w-xl mx-auto px-2 sm:px-4 flex items-center justify-between gap-1 sm:gap-1.5">
         {/* Brand Logo & Room Subtitle */}
         <div
-          className="flex items-center gap-1 sm:gap-1.5 shrink-0 cursor-pointer select-none"
+          className="flex items-center gap-1.5 sm:gap-2 shrink-0 cursor-pointer select-none"
           onClick={onOpenAuth}
           role="button"
           tabIndex={0}
           title="Thông tin tài khoản"
         >
-          <span className="text-xl sm:text-2xl">🐱</span>
+          <img
+            src="/images/logo-purr-fish.jpg"
+            alt="Purr-Fish Logo"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover border border-amber-300 shadow-xs shrink-0"
+            draggable={false}
+          />
           <div className="flex flex-col">
             <span className="font-headline-sm text-xs sm:text-base text-primary tracking-tight font-black leading-none">
               Purr-Fish
@@ -61,7 +66,12 @@ export const ScoreDisplay: React.FC<ScoreDisplayProps> = ({
             className="h-7 sm:h-8 flex items-center bg-surface-container-lowest/95 px-2 sm:px-2.5 rounded-full shadow-[0_2px_6px_rgba(122,105,104,0.08)] border border-outline-variant/40 shrink-0"
             title="Số xu tích lũy"
           >
-            <span className="mr-0.5 sm:mr-1 text-xs sm:text-sm">🪙</span>
+            <img
+              src="/images/icon/xu-vang.webp"
+              alt="Xu"
+              className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5 object-contain mr-1 shrink-0 drop-shadow-xs"
+              draggable={false}
+            />
             <span className="text-[11px] sm:text-sm text-on-surface font-black">
               {formatNumber(fish)}
             </span>
@@ -91,12 +101,17 @@ export const ScoreDisplay: React.FC<ScoreDisplayProps> = ({
           {onOpenSettings && (
             <button
               type="button"
-              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-surface-container-lowest/95 shadow-[0_2px_6px_rgba(122,105,104,0.08)] border border-outline-variant/40 flex items-center justify-center text-xs sm:text-sm cursor-pointer hover:bg-surface-container active:scale-95 transition-transform shrink-0"
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-surface-container-lowest/95 shadow-[0_2px_6px_rgba(122,105,104,0.08)] border border-outline-variant/40 flex items-center justify-center p-1 cursor-pointer hover:bg-surface-container active:scale-95 transition-transform shrink-0"
               onClick={onOpenSettings}
               title="Cài đặt trò chơi (Âm thanh, Nhạc, Đăng xuất...)"
               aria-label="Cài đặt trò chơi"
             >
-              ⚙️
+              <img
+                src="/images/icon/icon-seting.webp"
+                alt="Cài đặt"
+                className="w-4 h-4 sm:w-5 sm:h-5 object-contain drop-shadow-xs"
+                draggable={false}
+              />
             </button>
           )}
         </div>

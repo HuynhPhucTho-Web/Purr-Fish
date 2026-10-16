@@ -98,7 +98,15 @@ export const FloatingReward: React.FC<FloatingRewardProps> = ({
             onAnimationEnd={() => onRemoveFloatingItem(item.id)}
           >
             <div className="floating-text-column">
-              <span className="floating-val">{item.text}</span>
+              <span className="floating-val inline-flex items-center justify-center gap-1">
+                <img
+                  src="/images/icon/xu-vang.webp"
+                  alt="Xu"
+                  className="w-4 h-4 object-contain inline-block shrink-0"
+                  draggable={false}
+                />
+                <span>{item.text}</span>
+              </span>
               {item.fishName && (
                 <span
                   className="floating-fish-species-label"
@@ -157,7 +165,16 @@ export const FloatingReward: React.FC<FloatingRewardProps> = ({
             <span className="toast-sparkle"></span>
             <div className="min-w-0 text-center sm:text-left">
               <h4 className="toast-title truncate sm:text-clip">BẮT ĐƯỢC CÁ VÀNG MAY MẮN!</h4>
-              <p className="toast-amount">🎒 +2 Cá Vàng vào Túi Balo • +{formatNumber(goldenToast.amount)} Xu 🪙 • FRENZY!</p>
+              <p className="toast-amount flex items-center justify-center sm:justify-start gap-1 flex-wrap">
+                <span>🎒 +2 Cá Vàng vào Balo • +{formatNumber(goldenToast.amount)}</span>
+                <img
+                  src="/images/icon/xu-vang.webp"
+                  alt="Xu"
+                  className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                  draggable={false}
+                />
+                <span>Xu • FRENZY!</span>
+              </p>
             </div>
             <span className="toast-sparkle"></span>
           </div>
@@ -173,11 +190,16 @@ export const FloatingReward: React.FC<FloatingRewardProps> = ({
             </div>
             <h3 className="offline-title">Chào Mừng Trở Lại!</h3>
             <p className="offline-message">
-              Trong lúc bạn vắng mặt ({formatTime(offlineReward.offlineSeconds)}), mèo cưng đã miệt mài bắt cá:
+              Trong lúc bạn vắng mặt ({formatTime(offlineReward.offlineSeconds)}), mèo cưng đã miệt mài nhặt xu:
             </p>
-            <div className="offline-fish-pill">
-              <span className="offline-fish-icon">🐟</span>
-              <span className="offline-fish-amount">+{formatNumber(offlineReward.offlineFish)} Cá</span>
+            <div className="offline-fish-pill flex items-center justify-center gap-1.5">
+              <img
+                src="/images/icon/xu-vang.webp"
+                alt="Xu"
+                className="w-5 h-5 object-contain shrink-0"
+                draggable={false}
+              />
+              <span className="offline-fish-amount">+{formatNumber(offlineReward.offlineFish)} Xu</span>
             </div>
             <button
               type="button"

@@ -8,6 +8,7 @@ import {
 } from '../data/fashionAndDecor';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
+import { CoinIcon } from './CoinIcon';
 
 interface FashionShopModalProps {
   isOpen: boolean;
@@ -166,8 +167,8 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold shadow-2xs">
-              <span>🪙</span>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold shadow-2xs">
+              <CoinIcon size={16} />
               <span>{formatNumber(coins)}</span>
             </div>
             <button
@@ -383,7 +384,7 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
 
                       {item.category === 'balls' && (
                         <div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-black leading-none">
-                          <span>🪙</span>
+                          <CoinIcon size={12} />
                           <span>{getToyRewardConfig(item).label}</span>
                         </div>
                       )}
@@ -400,8 +401,9 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
                       {item.price === 0 ? (
                         <span className="text-xs font-bold text-emerald-700">Miễn phí</span>
                       ) : !owned ? (
-                        <span className="text-xs font-bold text-amber-900 flex items-center gap-0.5">
-                          🪙 {formatNumber(item.price)} Xu
+                        <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                          <CoinIcon size={14} />
+                          <span>{formatNumber(item.price)} Xu</span>
                         </span>
                       ) : (
                         <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">
@@ -438,7 +440,7 @@ export const FashionShopModal: React.FC<FashionShopModalProps> = ({
                           : item.category === 'balls'
                           ? `Gắn Lên Phòng (${equippedBallsList.length}/3)`
                           : 'Trang Bị'
-                        : `Mua (${formatNumber(item.price)}🪙)`}
+                        : `Mua (${formatNumber(item.price)} Xu)`}
                     </button>
                   </div>
                 </div>

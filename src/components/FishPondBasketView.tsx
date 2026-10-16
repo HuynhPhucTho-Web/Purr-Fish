@@ -300,7 +300,12 @@ export const FishPondBasketView: React.FC<FishPondBasketViewProps> = ({
               <span>Đang có: <strong>{safeBasket.length}/50</strong> con</span>
             </div>
             <div className="pond-hud-item">
-              <span className="hud-icon">🪙</span>
+              <img
+                src="/images/icon/xu-vang.webp"
+                alt="Xu"
+                className="w-4 h-4 object-contain inline-block shrink-0"
+                draggable={false}
+              />
               <span>Xu vàng: <strong>{formatNumber(fish)}</strong></span>
             </div>
             <button
@@ -403,17 +408,32 @@ export const FishPondBasketView: React.FC<FishPondBasketViewProps> = ({
               </div>
               <div className="stat-box highlight-gold">
                 <span className="stat-label">Giá trị bán</span>
-                <span className="stat-number">🪙 {formatNumber(totalValue)}</span>
+                <span className="stat-number flex items-center justify-center gap-1">
+                  <img
+                    src="/images/icon/xu-vang.webp"
+                    alt="Xu"
+                    className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                    draggable={false}
+                  />
+                  <span>{formatNumber(totalValue)} Xu</span>
+                </span>
               </div>
             </div>
 
             <button
               type="button"
-              className="sell-all-big-btn"
+              className="sell-all-big-btn flex items-center justify-center gap-1.5"
               onClick={handleSellAll}
               disabled={safeBasket.length === 0}
             >
-              💰 Bán Tất Cả Lấy {formatNumber(totalValue)} Xu Vàng
+              <span>Bán Tất Cả Lấy</span>
+              <img
+                src="/images/icon/xu-vang.webp"
+                alt="Xu"
+                className="w-4 h-4 object-contain inline-block shrink-0"
+                draggable={false}
+              />
+              <span>{formatNumber(totalValue)} Xu Vàng</span>
             </button>
           </div>
 
@@ -441,7 +461,13 @@ export const FishPondBasketView: React.FC<FishPondBasketViewProps> = ({
                   className={`sort-pill ${sortOption === 'value' ? 'sort-active' : ''}`}
                   onClick={() => setSortOption('value')}
                 >
-                  Giá cao 🪙
+                  <span>Giá cao</span>
+                  <img
+                    src="/images/icon/xu-vang.webp"
+                    alt="Xu"
+                    className="w-3 h-3 object-contain inline-block ml-0.5 shrink-0"
+                    draggable={false}
+                  />
                 </button>
                 <button
                   type="button"
@@ -490,18 +516,29 @@ export const FishPondBasketView: React.FC<FishPondBasketViewProps> = ({
                         <span className="weight-tag">⚖️ {item.weightKg} kg</span>
                       </div>
                       <div className="fish-value-line">
-                        <span className="coin-icon">🪙</span>
+                        <img
+                          src="/images/icon/xu-vang.webp"
+                          alt="Xu"
+                          className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                          draggable={false}
+                        />
                         <strong className="sell-price-num">{formatNumber(item.sellPrice)} Xu</strong>
                       </div>
                     </div>
 
                     <button
                       type="button"
-                      className="sell-single-fish-btn"
+                      className="sell-single-fish-btn flex items-center justify-center gap-1"
                       onClick={() => handleSellOne(item.instanceId)}
                       title={`Bán lấy ${formatNumber(item.sellPrice)} xu`}
                     >
-                      Bán lẻ 🪙
+                      <span>Bán lẻ</span>
+                      <img
+                        src="/images/icon/xu-vang.webp"
+                        alt="Xu"
+                        className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                        draggable={false}
+                      />
                     </button>
                   </div>
                 ))}

@@ -2,6 +2,7 @@ import React from 'react';
 import { FOOD_SHOP_CATALOG, type FoodItem } from '../data/foodShop';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
+import { CoinIcon } from './CoinIcon';
 
 interface FoodShopModalProps {
   coins: number;
@@ -45,7 +46,7 @@ export const FoodShopModal: React.FC<FoodShopModalProps> = ({
         {/* Status Bar: Coins & Pet Belly */}
         <div className="food-shop-status-bar">
           <div className="status-item coins-stat">
-            <span className="stat-icon">🪙</span>
+            <CoinIcon size={20} />
             <span className="stat-val">{formatNumber(coins)} Xu</span>
           </div>
           <div className="status-item belly-stat">
@@ -107,8 +108,8 @@ export const FoodShopModal: React.FC<FoodShopModalProps> = ({
                   </div>
 
                   <div className="food-card-footer">
-                    <div className="food-price-tag">
-                      <span className="price-coin">🪙</span>
+                    <div className="food-price-tag flex items-center gap-1">
+                      <CoinIcon size={16} />
                       <strong className="price-number">{formatNumber(item.price)}</strong>
                     </div>
 

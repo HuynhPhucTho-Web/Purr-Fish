@@ -14,12 +14,15 @@ import {
 } from '../data/fashionAndDecor';
 import { formatNumber } from '../utils/economy';
 import { soundManager } from '../utils/sound';
+import { CoinIcon } from './CoinIcon';
 
 export type BackpackTab = 'fish' | 'rods' | 'outfits' | 'food';
 
 export interface BackpackViewProps {
   basket: CaughtFishItem[];
   fish: number; // Coins
+  basketCapacity?: number;
+  sellMultiplier?: number;
   currentSkin: CatSkin;
   unlockedSkins: string[];
   equippedRodId?: string;
@@ -72,6 +75,8 @@ export interface BackpackViewProps {
 export const BackpackView: React.FC<BackpackViewProps> = ({
   basket = [],
   fish,
+  basketCapacity = 50,
+  sellMultiplier = 1.0,
   currentSkin,
   unlockedSkins = [],
   equippedRodId = 'wood_rod',
@@ -113,21 +118,20 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
 
   // Safe basket & totals
   const safeBasket = useMemo(() => (Array.isArray(basket) ? basket : []), [basket]);
-  const basketCapacity = 50;
-  const isNearFull = safeBasket.length >= 40;
+  const isNearFull = safeBasket.length >= Math.max(1, basketCapacity - 6);
 
-  // Normal / Common fish calculation for quick sell
+  // Normal / Common fish calculation for quick sell (áp dụng kỹ năng thương nhân)
   const normalFishList = useMemo(
     () => safeBasket.filter((f) => f.rarity === 'common'),
     [safeBasket]
   );
   const normalFishTotalValue = useMemo(
-    () => normalFishList.reduce((sum, f) => sum + (f.sellPrice || 0), 0),
-    [normalFishList]
+    () => Math.round(normalFishList.reduce((sum, f) => sum + (f.sellPrice || 0), 0) * sellMultiplier),
+    [normalFishList, sellMultiplier]
   );
   const totalBasketValue = useMemo(
-    () => safeBasket.reduce((sum, f) => sum + (f.sellPrice || 0), 0),
-    [safeBasket]
+    () => Math.round(safeBasket.reduce((sum, f) => sum + (f.sellPrice || 0), 0) * sellMultiplier),
+    [safeBasket, sellMultiplier]
   );
 
   // Sorting fish basket
@@ -216,7 +220,7 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
   // Sell 1 fish
   const handleSellOne = (item: CaughtFishItem) => {
     const earned = onSellFish(item.instanceId);
-    showToast(`Đã bán 1 con ${item.name} nhận +${formatNumber(earned)} 🪙!`);
+    showToast(`Đã bán 1 con ${item.name} nhận +${formatNumber(earned)} Xu!`);
   };
 
   // Sell all normal fish
@@ -226,14 +230,14 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
       return;
     }
     normalFishList.forEach((f) => onSellFish(f.instanceId));
-    showToast(`Đã bán hết cá thường! Nhận +${formatNumber(normalFishTotalValue)} 🪙 🐟`);
+    showToast(`Đã bán hết cá thường! Nhận +${formatNumber(normalFishTotalValue)} Xu! 🐟`);
   };
 
   // Sell all fish
   const handleSellAll = () => {
     if (safeBasket.length === 0) return;
     const res = onSellAllFish();
-    showToast(`Đã bán toàn bộ ${res.count} con cá trong giỏ! Nhận +${formatNumber(res.totalEarned)} 🪙`);
+    showToast(`Đã bán toàn bộ ${res.count} con cá trong giỏ! Nhận +${formatNumber(res.totalEarned)} Xu!`);
   };
 
   // Equip Skin
@@ -420,7 +424,12 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
             </div>
 
             <div className="flex justify-between items-center text-xs text-on-surface-variant mt-1">
-              <span>Ước tính giá trị giỏ: <strong className="text-amber-900 font-bold">+{formatNumber(totalBasketValue)} 🪙</strong></span>
+              <span className="flex items-center gap-1">
+                <span>Ước tính giá trị giỏ:</span>
+                <strong className="text-amber-900 font-bold flex items-center gap-0.5">
+                  +{formatNumber(totalBasketValue)} <CoinIcon size="xs" />
+                </strong>
+              </span>
               <button
                 type="button"
                 className="text-primary font-bold hover:underline cursor-pointer flex items-center gap-1"
@@ -441,7 +450,11 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
               onClick={handleSellAllNormal}
             >
               <span className="material-symbols-outlined text-primary text-[18px]">sell</span>
-              <span>Bán Cá Thường (+{formatNumber(normalFishTotalValue)}🪙)</span>
+              <span className="flex items-center gap-1">
+                <span>Bán Cá Thường (+{formatNumber(normalFishTotalValue)}</span>
+                <CoinIcon size="xs" />
+                <span>)</span>
+              </span>
             </button>
 
             <button
@@ -451,7 +464,11 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
               onClick={handleSellAll}
             >
               <span className="material-symbols-outlined text-[18px]">paid</span>
-              <span>Bán Tất Cả (+{formatNumber(totalBasketValue)}🪙)</span>
+              <span className="flex items-center gap-1">
+                <span>Bán Tất Cả (+{formatNumber(totalBasketValue)}</span>
+                <CoinIcon size="xs" />
+                <span>)</span>
+              </span>
             </button>
           </div>
 
@@ -523,7 +540,9 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
                     </span>
                     <div className="flex items-center justify-between text-xs text-on-surface-variant my-1">
                       <span>⚖️ {item.weightKg} kg</span>
-                      <span className="font-bold text-amber-900">+{formatNumber(item.sellPrice)} 🪙</span>
+                      <span className="font-bold text-amber-900 flex items-center gap-0.5">
+                        +{formatNumber(item.sellPrice)} <CoinIcon size="xs" />
+                      </span>
                     </div>
 
                     <button
@@ -531,7 +550,11 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
                       className="w-full py-1.5 rounded-full bg-surface-container-high hover:bg-surface-container text-on-surface font-label-sm text-label-sm font-bold flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
                       onClick={() => handleSellOne(item)}
                     >
-                      <span>Bán (+{formatNumber(item.sellPrice)}🪙)</span>
+                      <span className="flex items-center gap-1">
+                        <span>Bán (+{formatNumber(item.sellPrice)}</span>
+                        <CoinIcon size="xs" />
+                        <span>)</span>
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -644,7 +667,11 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
                         }}
                       >
                         <span className="material-symbols-outlined text-[16px]">build</span>
-                        <span>Sửa Cần Hỏng ({formatNumber(repairCost)} 🪙)</span>
+                        <span className="flex items-center gap-1">
+                          <span>Sửa Cần Hỏng ({formatNumber(repairCost)}</span>
+                          <CoinIcon size="xs" />
+                          <span>)</span>
+                        </span>
                       </button>
                     ) : (
                       <div className="flex-1 py-2 rounded-full bg-surface-container text-on-surface-variant font-label-md text-label-md flex items-center justify-center gap-1 font-bold">
@@ -1078,8 +1105,9 @@ export const BackpackView: React.FC<BackpackViewProps> = ({
                       <span className="font-label-md text-label-md text-on-surface mb-1 font-bold line-clamp-1">{item.name}</span>
                       <span className="font-body-sm text-body-sm text-secondary text-[11px] mb-1 line-clamp-1">{item.perk}</span>
                       {item.category === 'balls' && (
-                        <span className="text-[10px] font-black text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 mb-2">
-                          🪙 {getToyRewardConfig(item).label}
+                        <span className="text-[10px] font-black text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 mb-2 flex items-center justify-center gap-1">
+                          <CoinIcon size="xs" />
+                          <span>{getToyRewardConfig(item).label}</span>
                         </span>
                       )}
 

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { UPGRADES } from '../data/upgrades';
+import React, { useState, useMemo } from 'react';
+import { UPGRADES, UPGRADE_CATEGORIES, type UpgradeCategory } from '../data/upgrades';
 import { SKINS, type CatSkin } from '../data/skins';
 import { MEAL_PLANS_CATALOG, type MealPlan } from '../data/foodShop';
 import type { ActiveMealPlanInfo } from '../utils/saveGame';
@@ -36,7 +36,13 @@ export const GrowthUpgradeView: React.FC<GrowthUpgradeViewProps> = ({
   onBackToCat,
 }) => {
   const [subTab, setSubTab] = useState<GrowthSubTab>(defaultSubTab);
+  const [selectedCategory, setSelectedCategory] = useState<UpgradeCategory | 'all'>('all');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const filteredUpgrades = useMemo(() => {
+    if (selectedCategory === 'all') return UPGRADES;
+    return UPGRADES.filter((u) => u.category === selectedCategory);
+  }, [selectedCategory]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -51,7 +57,6 @@ export const GrowthUpgradeView: React.FC<GrowthUpgradeViewProps> = ({
     }
     const success = onBuyMealPlan(plan);
     if (success) {
-      soundManager.playUpgrade();
       showToast(`🎉 Đã đăng ký thành công ${plan.name}! Mèo được tự động cho ăn khi đói.`);
     }
   };
@@ -90,7 +95,12 @@ export const GrowthUpgradeView: React.FC<GrowthUpgradeViewProps> = ({
 
       {/* Balance Banner */}
       <div className="shop-balance-banner mb-2.5 sm:mb-3.5">
-        <span className="balance-icon">🪙</span>
+        <img
+          src="/images/icon/xu-vang.webp"
+          alt="Xu"
+          className="w-5 h-5 object-contain inline-block shrink-0"
+          draggable={false}
+        />
         <span className="balance-label">Xu Vàng Hiện Có:</span>
         <strong className="balance-val">{formatNumber(coins)} Xu</strong>
       </div>
@@ -148,31 +158,102 @@ export const GrowthUpgradeView: React.FC<GrowthUpgradeViewProps> = ({
       {/* ========================================================================= */}
       {subTab === 'upgrades' && (
         <div className="shop-section upgrades-tab-container flex flex-col gap-2.5">
+          {/* Category Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            {UPGRADE_CATEGORIES.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => {
+                  soundManager.playPop();
+                  setSelectedCategory(cat.id);
+                }}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                  selectedCategory === cat.id
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'bg-surface-container hover:bg-surface-container-high text-on-surface-variant'
+                }`}
+              >
+                <span>{cat.icon}</span>
+                <span>{cat.name}</span>
+                {cat.id !== 'all' && (
+                  <span className="text-[10px] opacity-75 font-normal">
+                    ({UPGRADES.filter((u) => u.category === cat.id).length})
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Upgrades List */}
           <div className="upgrades-list flex flex-col gap-2.5">
-            {UPGRADES.map((item) => {
+            {filteredUpgrades.map((item) => {
               const currentLevel = upgrades[item.id] || 0;
-              const cost = calculateUpgradeCost(item.baseCost, currentLevel);
-              const canAfford = coins >= cost;
-              const progressPercent = Math.min(100, Math.floor((coins / cost) * 100));
+              const isMax = currentLevel >= item.maxLevel;
+              const cost = isMax
+                ? 0
+                : calculateUpgradeCost(item.baseCost, currentLevel, item.costMultiplier || 1.65);
+              const canAfford = !isMax && coins >= cost;
+              const progressPercent = isMax
+                ? 100
+                : Math.min(100, Math.floor((coins / cost) * 100));
+
+              const categoryLabel =
+                item.category === 'cat'
+                  ? 'Mèo Cưng'
+                  : item.category === 'fishing'
+                  ? 'Hồ Câu'
+                  : 'Kinh Tế';
+
+              const categoryBadgeClass =
+                item.category === 'cat'
+                  ? 'bg-rose-100 text-rose-700 border-rose-200'
+                  : item.category === 'fishing'
+                  ? 'bg-sky-100 text-sky-700 border-sky-200'
+                  : 'bg-amber-100 text-amber-800 border-amber-200';
 
               return (
                 <div
                   key={item.id}
-                  className={`upgrade-card ${canAfford ? 'can-afford' : 'cannot-afford'}`}
+                  className={`upgrade-card ${
+                    isMax ? 'is-max-level border-emerald-300/80 bg-emerald-50/20' : canAfford ? 'can-afford' : 'cannot-afford'
+                  }`}
                 >
                   <div className="upgrade-icon-wrap">
                     <span className="upgrade-icon">{item.icon}</span>
-                    <span className="upgrade-level-badge">Lv. {currentLevel}</span>
+                    <span
+                      className={`upgrade-level-badge text-[10px] ${
+                        isMax
+                          ? 'bg-emerald-600 text-white font-black'
+                          : 'bg-surface-container text-on-surface font-bold'
+                      }`}
+                    >
+                      {isMax ? 'MAX' : `Lv. ${currentLevel}/${item.maxLevel}`}
+                    </span>
                   </div>
 
-                  <div className="upgrade-details">
-                    <div className="upgrade-name-row">
-                      <h3 className="upgrade-name">{item.name}</h3>
+                  <div className="upgrade-details min-w-0">
+                    <div className="upgrade-name-row flex items-center justify-between gap-1 flex-wrap">
+                      <h3 className="upgrade-name text-xs sm:text-sm font-black truncate">
+                        {item.name}
+                      </h3>
+                      <span
+                        className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full border shrink-0 ${categoryBadgeClass}`}
+                      >
+                        {categoryLabel}
+                      </span>
                     </div>
-                    <p className="upgrade-desc">{item.description}</p>
 
-                    <div className="upgrade-effect-pill">
-                      {currentLevel > 0 ? (
+                    <p className="upgrade-desc text-[11px] sm:text-xs text-on-surface-variant line-clamp-1 mt-0.5">
+                      {item.description}
+                    </p>
+
+                    <div className="upgrade-effect-pill mt-1">
+                      {isMax ? (
+                        <span className="text-emerald-700 font-bold">
+                          ✓ Đạt tối đa: {item.effectDescription(currentLevel)}
+                        </span>
+                      ) : currentLevel > 0 ? (
                         <span>
                           {item.effectDescription(currentLevel)} ➔ <strong>{item.nextEffectDescription(currentLevel)}</strong>
                         </span>
@@ -183,8 +264,8 @@ export const GrowthUpgradeView: React.FC<GrowthUpgradeViewProps> = ({
                       )}
                     </div>
 
-                    {!canAfford && (
-                      <div className="cost-progress-bar-bg" title={`${progressPercent}% để nâng cấp`}>
+                    {!isMax && !canAfford && (
+                      <div className="cost-progress-bar-bg mt-1" title={`${progressPercent}% để nâng cấp`}>
                         <div
                           className="cost-progress-bar-fill"
                           style={{ width: `${progressPercent}%` }}
@@ -193,17 +274,32 @@ export const GrowthUpgradeView: React.FC<GrowthUpgradeViewProps> = ({
                     )}
                   </div>
 
-                  <div className="upgrade-action">
-                    <button
-                      type="button"
-                      className={`buy-upgrade-btn ${canAfford ? 'btn-active' : 'btn-disabled'}`}
-                      disabled={!canAfford}
-                      onClick={() => onBuyUpgrade(item.id)}
-                    >
-                      <span className="buy-fish-icon">🪙</span>
-                      <span className="buy-cost-text">{formatNumber(cost)}</span>
-                      <span className="buy-label">Nâng cấp</span>
-                    </button>
+                  <div className="upgrade-action shrink-0">
+                    {isMax ? (
+                      <button
+                        type="button"
+                        className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-emerald-100 text-emerald-800 font-black text-xs border border-emerald-300 opacity-90 cursor-default"
+                        disabled
+                      >
+                        ✓ Tối Đa
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className={`buy-upgrade-btn ${canAfford ? 'btn-active' : 'btn-disabled'}`}
+                        disabled={!canAfford}
+                        onClick={() => onBuyUpgrade(item.id)}
+                      >
+                        <img
+                          src="/images/icon/xu-vang.webp"
+                          alt="Xu"
+                          className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                          draggable={false}
+                        />
+                        <span className="buy-cost-text">{formatNumber(cost)}</span>
+                        <span className="buy-label">Nâng cấp</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -303,8 +399,14 @@ export const GrowthUpgradeView: React.FC<GrowthUpgradeViewProps> = ({
                         onClick={() => onUnlockSkin(skin.id)}
                       >
                         <span>Mở khóa</span>
-                        <span className="unlock-price">
-                          🪙 {formatNumber(skin.unlockCost)}
+                        <span className="unlock-price flex items-center justify-center gap-1">
+                          <img
+                            src="/images/icon/xu-vang.webp"
+                            alt="Xu"
+                            className="w-3.5 h-3.5 object-contain inline-block shrink-0"
+                            draggable={false}
+                          />
+                          <span>{formatNumber(skin.unlockCost)}</span>
                         </span>
                       </button>
                     )}
@@ -428,8 +530,14 @@ export const GrowthUpgradeView: React.FC<GrowthUpgradeViewProps> = ({
                           {formatNumber(plan.originalPrice)}
                         </del>
                       </div>
-                      <div className="text-xs sm:text-sm font-black text-amber-700">
-                        🪙 {formatNumber(plan.price)} Xu
+                      <div className="text-xs sm:text-sm font-black text-amber-700 flex items-center gap-1">
+                        <img
+                          src="/images/icon/xu-vang.webp"
+                          alt="Xu"
+                          className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain inline-block shrink-0"
+                          draggable={false}
+                        />
+                        <span>{formatNumber(plan.price)} Xu</span>
                       </div>
                     </div>
 
