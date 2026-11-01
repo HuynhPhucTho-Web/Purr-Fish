@@ -165,7 +165,7 @@ export function calculateLevelFromTotalXp(totalXp: number): {
   let remainingXp = Math.max(0, totalXp);
   let currentLevel = 1;
 
-  while (currentLevel < 999) {
+  while (currentLevel < 9999) {
     const cost = getXpRequiredForLevel(currentLevel);
     if (remainingXp < cost) {
       break;
@@ -205,31 +205,31 @@ export const CAT_GROWTH_STAGES: CatGrowthStage[] = [
     label: 'Bé Mèo Con (Kitten)',
     scale: 0.72,
     minLevel: 1,
-    maxLevel: 4,
+    maxLevel: 9,
     meowSoundType: 'high',
   },
   {
     stage: 'junior',
     label: 'Mèo Thiếu Niên (Junior)',
     scale: 0.88,
-    minLevel: 5,
-    maxLevel: 9,
+    minLevel: 10,
+    maxLevel: 24,
     meowSoundType: 'cute',
   },
   {
     stage: 'adult',
     label: 'Mèo Trưởng Thành (Adult)',
     scale: 1.02,
-    minLevel: 10,
-    maxLevel: 24,
+    minLevel: 25,
+    maxLevel: 49,
     meowSoundType: 'normal',
   },
   {
     stage: 'chonky_king',
     label: 'Mèo Đại Gia Béo Múp (Chonky King)',
     scale: 1.22,
-    minLevel: 25,
-    maxLevel: 999,
+    minLevel: 50,
+    maxLevel: 9999,
     meowSoundType: 'deep',
     auraClass: 'cat-aura-king',
   },

@@ -144,7 +144,7 @@ const PRESET_SKIN_METAS = [
     clickMult: 1.15,
     autoMult: 1.0,
     comboMult: 1.05,
-    cost: 500,
+    cost: 1000,
     palette: {
       fur: '#8395A7',
       furDark: '#576574',
@@ -166,7 +166,7 @@ const PRESET_SKIN_METAS = [
     clickMult: 1.2,
     autoMult: 1.15,
     comboMult: 1.1,
-    cost: 1200,
+    cost: 4200,
     palette: {
       fur: '#7F8FA6',
       furDark: '#718093',
@@ -188,7 +188,7 @@ const PRESET_SKIN_METAS = [
     clickMult: 1.25,
     autoMult: 1.2,
     comboMult: 1.3,
-    cost: 3000,
+    cost: 8000,
     palette: {
       fur: '#A0704F',
       furDark: '#7B4E2E',
@@ -210,7 +210,7 @@ const PRESET_SKIN_METAS = [
     clickMult: 1.35,
     autoMult: 1.35,
     comboMult: 1.25,
-    cost: 7500,
+    cost: 15500,
     palette: {
       fur: '#2C3E50',
       furDark: '#1E272E',
@@ -232,7 +232,7 @@ const PRESET_SKIN_METAS = [
     clickMult: 1.5,
     autoMult: 1.4,
     comboMult: 1.4,
-    cost: 15000,
+    cost: 25000,
     palette: {
       fur: '#F5F6FA',
       furDark: '#718093',
@@ -254,7 +254,7 @@ const PRESET_SKIN_METAS = [
     clickMult: 2.0,
     autoMult: 2.0,
     comboMult: 2.0,
-    cost: 30000,
+    cost: 35000,
     palette: {
       fur: '#F1C40F',
       furDark: '#D4AC0D',
@@ -276,7 +276,7 @@ const PRESET_SKIN_METAS = [
     clickMult: 1.6,
     autoMult: 1.6,
     comboMult: 1.5,
-    cost: 45000,
+    cost: 50000,
     palette: {
       fur: '#F39C12',
       furDark: '#D35400',
@@ -298,7 +298,7 @@ const PRESET_SKIN_METAS = [
     clickMult: 1.8,
     autoMult: 1.7,
     comboMult: 1.8,
-    cost: 70000,
+    cost: 80000,
     palette: {
       fur: '#1E272E',
       furDark: '#000000',
