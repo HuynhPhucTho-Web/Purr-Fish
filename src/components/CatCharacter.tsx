@@ -89,12 +89,30 @@ interface CatCharacterProps {
   onClaimFreeWater?: () => { success: boolean; message: string; remainingMs?: number; gainedWater?: number };
   onBuyFashionItem?: (item: FashionDecorItem) => { success: boolean; message: string };
   onEquipFashionItem?: (item: FashionDecorItem) => boolean;
-  onCatClick: (clientX: number, clientY: number) => void;
+  onCatClick: (
+    clientX: number,
+    clientY: number
+  ) => {
+    earned: number;
+    isTired?: boolean;
+    remainingCooldownSec?: number;
+    currentStamina?: number;
+    maxStamina?: number;
+  } | void;
   onPlayWithToy?: (
     toyId: string,
     clientX?: number,
     clientY?: number
-  ) => { gainedCoins: number; success: boolean; ratePercent: number; toyName: string };
+  ) => {
+    gainedCoins: number;
+    success: boolean;
+    ratePercent: number;
+    toyName: string;
+    isTired?: boolean;
+    remainingCooldownSec?: number;
+    currentStamina?: number;
+    maxStamina?: number;
+  };
   autoOpenFeedModal?: boolean;
   onResetAutoOpenFeed?: () => void;
 }
@@ -117,8 +135,8 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
   isCatActive,
   actualClickPower,
   autoFishRate,
-  comboMultiplier,
-  comboCount,
+  comboMultiplier: _comboMultiplier,
+  comboCount: _comboCount,
   isFrenzy,
   food,
   water,
@@ -158,6 +176,40 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
   const [feedQuantity, setFeedQuantity] = useState<number>(1);
   const [feedToast, setFeedToast] = useState<string | null>(null);
   const [localPopups, setLocalPopups] = useState<LocalPopupItem[]>([]);
+
+  // Đếm ngược thời gian hồi phục thể lực khi mèo mệt do chơi đồ chơi
+  const [toyTiredSeconds, setToyTiredSeconds] = useState<number>(0);
+
+  useEffect(() => {
+    if (toyTiredSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setToyTiredSeconds((prev) => {
+        if (prev <= 1) {
+          soundManager.playPop(1.3);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [toyTiredSeconds]);
+
+  // Đếm ngược thời gian hồi phục thể lực khi mèo mệt do bị vuốt ve liên tục
+  const [petTiredSeconds, setPetTiredSeconds] = useState<number>(0);
+
+  useEffect(() => {
+    if (petTiredSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setPetTiredSeconds((prev) => {
+        if (prev <= 1) {
+          soundManager.playPop(1.3);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [petTiredSeconds]);
 
   // Chế độ chọn phòng nền background
   const [isRoomPickerOpen, setIsRoomPickerOpen] = useState(false);
@@ -436,30 +488,47 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
     let gained = 0;
     let isSuccess = false;
     let ratePercent = 35;
+    let isTired = false;
+    let remainingCooldownSec = 0;
+    let currentStamina = 8;
 
     if (onPlayWithToy) {
       const res = onPlayWithToy(ballId, cx, cy);
       gained = res.gainedCoins;
       isSuccess = res.success;
       ratePercent = res.ratePercent;
+      isTired = !!res.isTired;
+      remainingCooldownSec = res.remainingCooldownSec || 0;
+      currentStamina = res.currentStamina ?? 8;
+      if (res.isTired && res.remainingCooldownSec) {
+        setToyTiredSeconds(res.remainingCooldownSec);
+      }
     } else {
       soundManager.playPop(1.2 + idx * 0.1);
     }
 
     // Hiển thị popup cục bộ ngay tại vị trí của đồ chơi trong phòng
     const pos = toyPositions[idx] || DEFAULT_TOY_POSITIONS[idx] || { x: 14 + idx * 22, y: 76 };
-    const popupText = isSuccess ? `+${gained} Xu` : `🐾 Vui đùa! (${ratePercent}%)`;
+    let popupText = `🐾 Vui đùa! (${ratePercent}%)`;
+    if (isTired) {
+      popupText = `💤 Boss mệt rồi! (${remainingCooldownSec}s)`;
+    } else if (isSuccess) {
+      popupText = `+${gained} Xu (${currentStamina}/8⚡)`;
+    } else {
+      popupText = `🐾 Vui đùa! (${currentStamina}/8⚡)`;
+    }
+
     const newPopup: LocalPopupItem = {
       id: `pop_toy_${Date.now()}_${Math.random()}`,
       xPercent: pos.x,
       yPercent: Math.max(12, pos.y - 10),
       text: popupText,
-      isCrit: isSuccess,
+      isCrit: isSuccess && !isTired,
     };
     setLocalPopups((prev) => [...prev.slice(-6), newPopup]);
     setTimeout(() => {
       setLocalPopups((prev) => prev.filter((p) => p.id !== newPopup.id));
-    }, 850);
+    }, 950);
   };
 
   const handleBowlClick = (e?: React.MouseEvent | React.PointerEvent) => {
@@ -575,7 +644,18 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
     // Call game state handler
     const cx = clientX ?? (window.innerWidth / 2);
     const cy = clientY ?? (window.innerHeight / 2);
-    onCatClick(cx, cy);
+    const res = onCatClick(cx, cy);
+
+    // Nếu Boss đang mệt mỏi vì bị nựng / spam click quá nhiều
+    if (res && res.isTired) {
+      if (res.remainingCooldownSec) {
+        setPetTiredSeconds(res.remainingCooldownSec);
+      }
+      return;
+    }
+
+    const currentStamina = res?.currentStamina ?? 10;
+    const maxStamina = res?.maxStamina ?? 10;
 
     // Spawn localized cute cuddle popup in sanctuary clicker stage
     const isCrit = Math.random() < (0.15 + (isFrenzy ? 0.35 : 0));
@@ -600,12 +680,12 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
       }
     }
 
-    const earned = Math.max(1, Math.round(actualClickPower * (isCrit ? 2.5 : 1)));
+    const earned = res?.earned ?? Math.max(1, Math.round(actualClickPower * (isCrit ? 2.5 : 1)));
     const newPopup: LocalPopupItem = {
       id: `pop_${Date.now()}_${Math.random()}`,
       xPercent: 35 + Math.random() * 30,
       yPercent: 35 + Math.random() * 25,
-      text: isCrit ? `CRIT! +${earned} Xu` : `+${earned} Xu`,
+      text: isCrit ? `CRIT! +${earned} Xu (${currentStamina}/${maxStamina}⚡)` : `+${earned} Xu (${currentStamina}/${maxStamina}⚡)`,
       isCrit,
     };
 
@@ -970,6 +1050,8 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
                     ? 'scale-125 z-30 drop-shadow-2xl opacity-90'
                     : isBouncingThis
                     ? '-translate-y-6 rotate-12 scale-125'
+                    : toyTiredSeconds > 0
+                    ? 'opacity-70 hover:scale-105'
                     : 'hover:scale-110 active:scale-95'
                 }`}
                 onPointerDown={(e) => handleItemPointerDown(e, `toy_${idx}`)}
@@ -990,10 +1072,16 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
                     {ballItem.icon || '🧶'}
                   </span>
                 )}
-                {/* Huy hiệu số thứ tự đồ chơi nhỏ */}
-                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 text-white text-[8px] font-black flex items-center justify-center shadow-xs pointer-events-none border border-white/70">
-                  {idx + 1}
-                </span>
+                {/* Huy hiệu số thứ tự hoặc trạng thái nghỉ ngơi của đồ chơi */}
+                {toyTiredSeconds > 0 ? (
+                  <span className="absolute -bottom-2 px-1.5 py-0.2 rounded-full bg-slate-900/90 text-amber-300 text-[8px] font-black flex items-center gap-0.5 shadow-md pointer-events-none border border-amber-400/60 animate-pulse whitespace-nowrap">
+                    💤 {toyTiredSeconds}s
+                  </span>
+                ) : (
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 text-white text-[8px] font-black flex items-center justify-center shadow-xs pointer-events-none border border-white/70">
+                    {idx + 1}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -1051,6 +1139,43 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
             tabIndex={0}
             aria-label="Vuốt ve mèo cưng để nhận xu"
           >
+            {/* BONG BÓNG KHI MÈO MỆT DO CHƠI ĐỒ CHƠI HOẶC BỊ VUỐT VE QUÁ NHIỀU */}
+            {!isCatHungry && (petTiredSeconds > 0 || toyTiredSeconds > 0) && (
+              <div
+                className="absolute -top-14 sm:-top-16 left-1/2 -translate-x-1/2 z-40 select-none pointer-events-none animate-pulse"
+                title="Mèo đang nghỉ ngơi hồi sức"
+              >
+                <div
+                  className={`relative bg-white/95 backdrop-blur-md text-slate-800 border-2 rounded-2xl px-2.5 py-1 sm:px-3 sm:py-1.5 flex items-center gap-1.5 whitespace-nowrap ${
+                    petTiredSeconds > 0
+                      ? 'border-pink-400 shadow-[0_8px_20px_rgba(244,114,182,0.3)]'
+                      : 'border-amber-400 shadow-[0_8px_20px_rgba(245,158,11,0.25)]'
+                  }`}
+                >
+                  <span className="text-sm sm:text-base">💤</span>
+                  <div className="flex flex-col text-left leading-tight">
+                    <span
+                      className={`text-[10px] sm:text-[11px] font-black ${
+                        petTiredSeconds > 0 ? 'text-pink-600' : 'text-amber-600'
+                      }`}
+                    >
+                      Boss mệt rồi! Nghỉ ngơi ({petTiredSeconds > 0 ? petTiredSeconds : toyTiredSeconds}s)
+                    </span>
+                    <span className="text-[9px] sm:text-[10px] font-bold text-slate-500">
+                      {petTiredSeconds > 0
+                        ? 'Bị nựng liên tục mệt quá meow~ 🐾'
+                        : 'Đang hồi sức để chơi tiếp... 🐾'}
+                    </span>
+                  </div>
+                  <div
+                    className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[7px] ${
+                      petTiredSeconds > 0 ? 'border-t-pink-400' : 'border-t-amber-400'
+                    }`}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* BONG BÓNG CHAT KHI MÈO ĐÓI (HUNGRY SPEECH BUBBLE) */}
             {isCatHungry && (
               <div
@@ -1539,22 +1664,36 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
         {/* Big Bouncy CTA: Vuốt ve Mèo (Tap to Pet) */}
         <button
           type="button"
-          className="relative z-10 w-full max-w-xs mt-1.5 sm:mt-2 bg-primary-container text-on-primary py-2.5 sm:py-3.5 px-4 sm:px-6 rounded-full font-headline-sm text-sm sm:text-headline-sm shadow-[0_3px_0_#842415] sm:shadow-[0_5px_0_#842415] active:translate-y-0.5 active:shadow-[0_1px_0_#842415] transition-all flex items-center justify-center gap-1.5 sm:gap-space-sm cursor-pointer select-none font-bold"
+          className={`relative z-10 w-full max-w-xs mt-1.5 sm:mt-2 py-2.5 sm:py-3.5 px-4 sm:px-6 rounded-full font-headline-sm text-sm sm:text-headline-sm transition-all flex items-center justify-center gap-1.5 sm:gap-space-sm cursor-pointer select-none font-bold ${
+            petTiredSeconds > 0
+              ? 'bg-slate-300 text-slate-700 shadow-[0_3px_0_#94a3b8] sm:shadow-[0_4px_0_#94a3b8] opacity-85'
+              : 'bg-primary-container text-on-primary shadow-[0_3px_0_#842415] sm:shadow-[0_5px_0_#842415] active:translate-y-0.5 active:shadow-[0_1px_0_#842415]'
+          }`}
           id="pet-button"
           onClick={handlePetButtonClick}
         >
-          <span className="material-symbols-outlined text-[20px] sm:text-[24px]">favorite</span>
-          <span className="truncate flex items-center justify-center gap-1">
-            <span>Vuốt ve {catName || currentSkin.name} (+{actualClickPower}</span>
-            <img
-              src="/images/icon/xu-vang.webp"
-              alt="Xu"
-              className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain inline-block shrink-0"
-              draggable={false}
-            />
-            <span>)</span>
+          <span className="material-symbols-outlined text-[20px] sm:text-[24px]">
+            {petTiredSeconds > 0 ? 'bedtime' : 'favorite'}
           </span>
-          <span className="material-symbols-outlined text-[16px] sm:text-[20px] opacity-80">touch_app</span>
+          <span className="truncate flex items-center justify-center gap-1">
+            {petTiredSeconds > 0 ? (
+              <span>Boss đang nghỉ ({petTiredSeconds}s)</span>
+            ) : (
+              <>
+                <span>Vuốt ve {catName || currentSkin.name} (+{actualClickPower}</span>
+                <img
+                  src="/images/icon/xu-vang.webp"
+                  alt="Xu"
+                  className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain inline-block shrink-0"
+                  draggable={false}
+                />
+                <span>)</span>
+              </>
+            )}
+          </span>
+          <span className="material-symbols-outlined text-[16px] sm:text-[20px] opacity-80">
+            {petTiredSeconds > 0 ? 'hourglass_top' : 'touch_app'}
+          </span>
         </button>
       </div>
 
@@ -1634,40 +1773,6 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
             </span>
           </div>
         </div>
-
-        {/* Frenzy Combo Bar */}
-        <div className="w-full bg-surface-container-high rounded-lg p-2 sm:p-space-sm flex flex-col gap-1 sm:gap-1.5 border border-outline-variant/30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1 sm:gap-1.5">
-              <span className="material-symbols-outlined text-tertiary text-[18px] sm:text-[20px] animate-pulse">
-                local_fire_department
-              </span>
-              <span className="font-label-sm sm:font-label-lg text-xs sm:text-label-lg text-on-surface font-bold">
-                Combo: <strong className="text-tertiary">{comboCount}x</strong>
-              </span>
-            </div>
-            <span className="bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-[10px] sm:text-label-sm px-1.5 sm:px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse font-bold">
-              x{comboMultiplier.toFixed(1)}
-            </span>
-          </div>
-          <div className="w-full h-2.5 sm:h-3 bg-surface-container-highest rounded-full overflow-hidden p-0.5 shadow-inner">
-            <div
-              className="h-full bg-gradient-to-r from-tertiary-container via-primary-container to-tertiary rounded-full relative transition-all duration-300"
-              style={{ width: `${Math.min(100, comboCount * 10)}%` }}
-            >
-              <div className="absolute inset-0 bg-white/20 animate-pulse" />
-            </div>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="font-label-sm text-[10px] sm:text-label-sm text-tertiary flex items-center gap-1 font-semibold truncate">
-              <span className="material-symbols-outlined text-[12px] sm:text-[14px]">auto_awesome</span>
-              {comboCount >= 10 ? '🔥 FRENZY BÙNG NỔ! Nhấp!' : 'Nhấp liên tục để FRENZY!'}
-            </span>
-            <span className="font-label-sm text-[10px] sm:text-label-sm text-on-surface-variant font-bold shrink-0">
-              x{comboMultiplier.toFixed(1)} Sản Lượng
-            </span>
-          </div>
-        </div>
       </div>
 
       {/* 4. Cute Notification Banner */}
@@ -1683,7 +1788,7 @@ export const CatCharacter: React.FC<CatCharacterProps> = React.memo(({
           ) : isWellCared ? (
             <>Mèo đang rất hạnh phúc! Tốc độ bắt cá tự động tăng thêm <strong>+25%</strong>.</>
           ) : (
-            <>Chạm vuốt ve mèo để nhận xu thưởng và kích hoạt combo bùng nổ!</>
+            <>Chạm vuốt ve mèo để nhận thêm xu thưởng!</>
           )}
         </p>
       </div>
