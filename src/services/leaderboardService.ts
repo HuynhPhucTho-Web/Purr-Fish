@@ -6,7 +6,7 @@ import {
   query,
   limit,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 
 export interface LeaderboardEntry {
   uid: string;
@@ -32,7 +32,8 @@ export const leaderboardService = {
    */
   async updateMyEntry(entry: LeaderboardEntry): Promise<void> {
     try {
-      if (!entry.uid) return;
+      if (!entry.uid || entry.uid.startsWith('local_')) return;
+      if (!auth.currentUser || auth.currentUser.uid !== entry.uid) return;
       const ref = doc(db, 'leaderboards', entry.uid);
       await setDoc(ref, {
         ...entry,

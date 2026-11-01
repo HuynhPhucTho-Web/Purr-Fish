@@ -10,36 +10,30 @@ export function useLocalSave(state: GameSaveData, currentUser?: UserProfileInfo 
   userRef.current = currentUser;
 
   const triggerSave = useCallback(() => {
-    if (userRef.current && !userRef.current.isAnonymous) {
-      saveGame(stateRef.current);
-      setSaveStatus('saved');
-      setTimeout(() => {
-        setSaveStatus('idle');
-      }, 1500);
-    }
+    saveGame(stateRef.current);
+    setSaveStatus('saved');
+    setTimeout(() => {
+      setSaveStatus('idle');
+    }, 1500);
   }, []);
 
-  // Periodic autosave every 4 seconds (chỉ lưu khi có user đăng nhập)
+  // Periodic autosave every 4 seconds for all users (offline, guest, or logged in)
   useEffect(() => {
     const timer = setInterval(() => {
-      if (userRef.current && !userRef.current.isAnonymous) {
-        saveGame(stateRef.current);
-      }
+      saveGame(stateRef.current);
     }, 4000);
 
     return () => clearInterval(timer);
   }, []);
 
-  // Save on tab close or mobile switch app (chỉ khi có user)
+  // Save on tab close or mobile switch app
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (userRef.current && !userRef.current.isAnonymous) {
-        saveGame(stateRef.current);
-      }
+      saveGame(stateRef.current);
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && userRef.current && !userRef.current.isAnonymous) {
+      if (document.visibilityState === 'hidden') {
         saveGame(stateRef.current);
       }
     };

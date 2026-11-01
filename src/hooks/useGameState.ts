@@ -38,6 +38,8 @@ import {
 import {
   loadGame,
   saveGame,
+  saveUserGame,
+  loadUserGame,
   calculateOfflineProgress,
   resetSavedGame,
   exportSaveCode,
@@ -92,6 +94,18 @@ export function useGameState() {
   const comboTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const catActiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Quản lý thể lực chơi đồ chơi chống auto-click spam (mèo mệt sau 8 lần chơi liên tiếp)
+  const toyStaminaRef = useRef<number>(8);
+  const toyTiredUntilRef = useRef<number>(0);
+  const lastToyClickTimeRef = useRef<number>(0);
+  const toyIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Quản lý thể lực vuốt ve mèo chống auto-click spam (mèo mệt sau 10 lần vuốt ve liên tiếp)
+  const petStaminaRef = useRef<number>(10);
+  const petTiredUntilRef = useRef<number>(0);
+  const lastPetClickTimeRef = useRef<number>(0);
+  const petIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // User Authentication & Cloud Sync State
   const [currentUser, setCurrentUser] = useState<UserProfileInfo | null>(() => authService.getCurrentUser());
 
@@ -99,28 +113,67 @@ export function useGameState() {
   dataRef.current = data;
 
   // Tải dữ liệu người chơi từ Cloud Firestore
+  // Tải dữ liệu người chơi từ Cloud Firestore hoặc sao lưu máy
   const loadUserDataFromCloud = useCallback(async (user: UserProfileInfo) => {
     if (!user || user.isAnonymous) return null;
-    const cloudData = await cloudSaveService.loadFromCloud(user.uid);
+
+    // 1. Kiểm tra sao lưu local riêng của tài khoản này
+    const localUserBackup = loadUserGame(user.username);
+
+    // 2. Thử tải từ Cloud nếu có Firebase Auth hợp lệ
+    let cloudData: GameSaveData | null = null;
+    if (auth.currentUser && auth.currentUser.uid === user.uid && !user.uid.startsWith('local_')) {
+      cloudData = await cloudSaveService.loadFromCloud(user.uid);
+    }
+
+    const currentLocal = dataRef.current;
+    const baseSource = cloudData || localUserBackup;
+
     const userCatName = (user.catName && user.catName !== 'Mèo Cưng')
       ? user.catName
-      : (cloudData?.catName && cloudData.catName !== 'Mèo Cưng')
-      ? cloudData.catName
-      : (user.displayName || cloudData?.catName || 'Mèo Cưng');
+      : (baseSource?.catName && baseSource.catName !== 'Mèo Cưng')
+      ? baseSource.catName
+      : (user.displayName || baseSource?.catName || 'Mèo Cưng');
 
-    if (cloudData) {
+    if (cloudData || localUserBackup) {
+      // SO SÁNH TIẾN TRÌNH: Giữ lại mức cao nhất (chống reset về 0)
+      const cloudCoins = Math.max(0, Number(cloudData?.fish ?? cloudData?.coins ?? localUserBackup?.fish ?? localUserBackup?.coins) || 0);
+      const cloudXp = Math.max(0, Number(cloudData?.xp ?? localUserBackup?.xp) || 0);
+      const localCoins = Math.max(0, Number(currentLocal.fish ?? currentLocal.coins) || 0);
+      const localXp = Math.max(0, Number(currentLocal.xp) || 0);
+
+      const finalCoins = Math.max(cloudCoins, localCoins);
+      const finalXp = Math.max(cloudXp, localXp);
+      const calcLvl = calculateLevelFromTotalXp(finalXp).level;
+
+      const higherSource = (localCoins > cloudCoins || localXp > cloudXp) ? currentLocal : (cloudData || localUserBackup || currentLocal);
+
       const restored: GameSaveData = {
         ...DEFAULT_SAVE_DATA,
-        ...cloudData,
+        ...baseSource,
+        ...higherSource,
+        fish: finalCoins,
+        coins: finalCoins,
+        xp: finalXp,
+        level: Math.max(calcLvl, Number(baseSource?.level) || 1, Number(currentLocal.level) || 1),
         catName: userCatName,
         displayName: userCatName,
-        catAvatar: cloudData.catAvatar || user.photoURL || '/images/cat_avatars_webp/avatar_01.webp',
-        username: cloudData.username || user.username || '',
-        fishBasket: Array.isArray(cloudData.fishBasket) ? cloudData.fishBasket : [],
+        catAvatar: baseSource?.catAvatar || user.photoURL || currentLocal.catAvatar || '/images/cat_avatars_webp/avatar_01.webp',
+        username: baseSource?.username || user.username || currentLocal.username || '',
+        fishBasket: (Array.isArray(currentLocal.fishBasket) && currentLocal.fishBasket.length > (baseSource?.fishBasket?.length || 0))
+          ? currentLocal.fishBasket
+          : (Array.isArray(baseSource?.fishBasket) ? baseSource.fishBasket : []),
         lastSaved: Date.now(),
       };
       setData(restored);
       saveGame(restored);
+      saveUserGame(user.username, restored);
+
+      // Nếu dữ liệu local cao hơn cloud và có kết nối Firestore, đồng bộ ngược lên cloud
+      if (cloudData && (localCoins > cloudCoins || localXp > cloudXp)) {
+        cloudSaveService.saveToCloud(user.uid, restored);
+      }
+
       return restored;
     } else {
       // Khi vừa tạo tài khoản hoặc chưa có cloud data: cập nhật state hiện tại với thông tin user mới
@@ -134,6 +187,7 @@ export function useGameState() {
           lastSaved: Date.now(),
         };
         saveGame(next);
+        saveUserGame(user.username, next);
         return next;
       });
     }
@@ -144,10 +198,10 @@ export function useGameState() {
     const unsub = authService.onAuthStateChanged(async (user) => {
       setCurrentUser(user);
       if (user && !user.isAnonymous) {
-        // Người dùng đã đăng nhập: Tải đúng dữ liệu của tài khoản này từ Firestore!
+        // Người dùng đã đăng nhập: Tải đúng dữ liệu của tài khoản này từ Firestore hoặc sao lưu
         const restored = await loadUserDataFromCloud(user);
-        if (!restored) {
-          // Chưa có save trên cloud (mới tạo tài khoản), lập tức lưu save local hiện tại lên cloud!
+        if (!restored && auth.currentUser && auth.currentUser.uid === user.uid && !user.uid.startsWith('local_')) {
+          // Chưa có save trên cloud (mới tạo tài khoản), lưu save local hiện tại lên cloud!
           const currentLocal = dataRef.current;
           const userCatName = (user.catName && user.catName !== 'Mèo Cưng')
             ? user.catName
@@ -166,6 +220,7 @@ export function useGameState() {
           };
           setData(enriched);
           saveGame(enriched);
+          saveUserGame(user.username, enriched);
           await cloudSaveService.saveToCloud(user.uid, enriched);
           await leaderboardService.updateMyEntry({
             uid: user.uid,
@@ -185,17 +240,9 @@ export function useGameState() {
             updatedAt: Date.now(),
           });
         }
-      } else {
-        // Đã đăng xuất (hoặc chưa đăng nhập): RESET TOÀN BỘ dữ liệu về ban đầu trò chơi!
-        resetSavedGame();
-        setData({
-          ...DEFAULT_SAVE_DATA,
-          lastSaved: Date.now(),
-        });
-        setComboCount(0);
-        setFloatingItems([]);
-        setSparkles([]);
       }
+      // TUYỆT ĐỐI KHÔNG RESET DỮ LIỆU Ở ĐÂY KHI CHƯA ĐĂNG NHẬP HOẶC KHÁCH!
+      // Người chơi luôn được giữ dữ liệu offline / localStorage nguyên vẹn.
     });
     return () => unsub();
   }, [loadUserDataFromCloud]);
@@ -481,8 +528,119 @@ export function useGameState() {
   }, [offlineReward]);
 
   // Handle Cat Click / Tap (Hardcore Balance: Đói hoặc Khát < 15% sẽ không nhận được xu!)
+  // Cơ chế chống auto-click: Mèo mệt sau 10 lần vuốt ve liên tiếp, cần 10s hồi sức
   const handleClick = useCallback(
-    (clientX?: number, clientY?: number) => {
+    (clientX?: number, clientY?: number): {
+      earned: number;
+      isTired?: boolean;
+      remainingCooldownSec?: number;
+      currentStamina?: number;
+      maxStamina?: number;
+    } => {
+      const now = Date.now();
+      const MAX_STAMINA = 10;
+      const RECOVERY_MS = 10000; // 10s hồi phục
+
+      // 1. Chống auto-clicker spam siêu tốc (< 130ms giữa 2 lần click)
+      if (now - lastPetClickTimeRef.current < 130) {
+        return {
+          earned: 0,
+          isTired: now < petTiredUntilRef.current,
+          remainingCooldownSec: Math.max(1, Math.ceil((petTiredUntilRef.current - now) / 1000)),
+          currentStamina: petStaminaRef.current,
+          maxStamina: MAX_STAMINA,
+        };
+      }
+      lastPetClickTimeRef.current = now;
+
+      // 2. Kiểm tra nếu Mèo đang trong thời gian nghỉ ngơi hồi sức vì bị vuốt ve liên tục
+      if (now < petTiredUntilRef.current) {
+        const remainingSec = Math.max(1, Math.ceil((petTiredUntilRef.current - now) / 1000));
+        soundManager.playPop(0.65);
+        if (data.settings.hapticsEnabled) {
+          soundManager.triggerHaptic(15);
+        }
+
+        if (clientX !== undefined && clientY !== undefined) {
+          const floatId = `float_pet_tired_${now}_${Math.random()}`;
+          setFloatingItems((prev) => [
+            ...prev.slice(-15),
+            {
+              id: floatId,
+              x: clientX,
+              y: clientY,
+              text: `💤 Boss mệt rồi (${remainingSec}s)`,
+              isCrit: false,
+              fishImage: '',
+              fishName: 'Mèo đang hồi sức...',
+              rarityColor: '#9CA3AF',
+            },
+          ]);
+        }
+
+        return {
+          earned: 0,
+          isTired: true,
+          remainingCooldownSec: remainingSec,
+          currentStamina: 0,
+          maxStamina: MAX_STAMINA,
+        };
+      }
+
+      // Nếu đã qua thời gian hồi sức, phục hồi lại thể lực đầy đủ
+      if (petTiredUntilRef.current > 0 && now >= petTiredUntilRef.current) {
+        petTiredUntilRef.current = 0;
+        petStaminaRef.current = MAX_STAMINA;
+      }
+
+      // Xoá bộ đếm nghỉ tay trước đó
+      if (petIdleTimerRef.current) {
+        clearTimeout(petIdleTimerRef.current);
+      }
+
+      // 3. Giảm thể lực sau mỗi lần vuốt ve liên tiếp
+      petStaminaRef.current = Math.max(0, petStaminaRef.current - 1);
+
+      // Nếu thể lực chạm 0: MÈO BỊ MỆT SAU 10 LẦN CLICK LIÊN TIẾP!
+      if (petStaminaRef.current <= 0) {
+        petTiredUntilRef.current = now + RECOVERY_MS;
+        soundManager.playPop(0.6);
+        if (data.settings.hapticsEnabled) {
+          soundManager.triggerHaptic(30);
+        }
+
+        if (clientX !== undefined && clientY !== undefined) {
+          const floatId = `float_pet_tired_${now}_${Math.random()}`;
+          setFloatingItems((prev) => [
+            ...prev.slice(-15),
+            {
+              id: floatId,
+              x: clientX,
+              y: clientY,
+              text: `😿 Boss bị cù lét mệt rồi! Nghỉ 10s nhé...`,
+              isCrit: false,
+              fishImage: '',
+              fishName: 'Nựng quá nhiều meow~',
+              rarityColor: '#EF4444',
+            },
+          ]);
+        }
+
+        return {
+          earned: 0,
+          isTired: true,
+          remainingCooldownSec: 10,
+          currentStamina: 0,
+          maxStamina: MAX_STAMINA,
+        };
+      }
+
+      // Tự động phục hồi thể lực đầy cây nếu người chơi dừng vuốt ve trong 3 giây
+      petIdleTimerRef.current = setTimeout(() => {
+        petStaminaRef.current = MAX_STAMINA;
+      }, 3000);
+
+      // 4. Nếu mèo chưa mệt: tính toán nhận xu và hiệu ứng như bình thường
       const isSatiated = (data.satietyExpiresAt || 0) > Date.now();
       const isExhausted = !isSatiated && (data.food < 15 || data.water < 15);
       const hungerFactor = (isSatiated || (data.food >= 60 && data.water >= 60)) ? 1.0 : 0.6;
@@ -554,7 +712,11 @@ export function useGameState() {
             id: floatId,
             x: clientX,
             y: clientY,
-            text: isExhausted ? '0 Xu Kiệt sức!' : isCrit ? `+${earned} Xu CRIT!` : `+${earned} Xu`,
+            text: isExhausted
+              ? '0 Xu Kiệt sức!'
+              : isCrit
+              ? `+${earned} Xu CRIT! (${petStaminaRef.current}/${MAX_STAMINA}⚡)`
+              : `+${earned} Xu (${petStaminaRef.current}/${MAX_STAMINA}⚡)`,
             isCrit: isCrit || isFrenzy,
             fishImage: '',
             fishName: isExhausted ? '😿 Mèo đói lả / Khát khô!' : isCrit ? '💖 Siêu cưng!' : '🐾 Vuốt ve',
@@ -575,21 +737,151 @@ export function useGameState() {
           setSparkles((prev) => [...prev.slice(-25), ...newSparks]);
         }
       }
+
+      return {
+        earned,
+        isTired: false,
+        remainingCooldownSec: 0,
+        currentStamina: petStaminaRef.current,
+        maxStamina: MAX_STAMINA,
+      };
     },
     [baseClickPower, comboCount, comboUpgradeLevel, data.settings, data.food, data.water, data.satietyExpiresAt, isFrenzy, comboMultiplier]
   );
 
   // Chơi đùa với đồ chơi trong phòng: có tỉ lệ nhận xu (mỗi loại đồ chơi có tỉ lệ khác nhau)
+  // Cơ chế chống auto click: Mèo chơi tối đa 8 lần liên tiếp, sau đó sẽ mệt mỏi và cần 12s hồi sức
   const playWithToy = useCallback(
     (
       toyId: string,
       clientX?: number,
       clientY?: number
-    ): { gainedCoins: number; success: boolean; ratePercent: number; toyName: string } => {
+    ): {
+      gainedCoins: number;
+      success: boolean;
+      ratePercent: number;
+      toyName: string;
+      isTired?: boolean;
+      remainingCooldownSec?: number;
+      currentStamina?: number;
+      maxStamina?: number;
+    } => {
       const toy = getFashionItemById(toyId);
       const toyName = toy?.name || 'Đồ chơi';
       const config = getToyRewardConfig(toy);
+      const now = Date.now();
+      const MAX_STAMINA = 8;
+      const RECOVERY_MS = 12000; // 12 giây nghỉ ngơi để mèo hồi sức
 
+      // 1. Chống auto-clicker spam siêu tốc (< 250ms giữa 2 lần click)
+      if (now - lastToyClickTimeRef.current < 250) {
+        return {
+          gainedCoins: 0,
+          success: false,
+          ratePercent: config.ratePercent,
+          toyName,
+          isTired: now < toyTiredUntilRef.current,
+          remainingCooldownSec: Math.max(1, Math.ceil((toyTiredUntilRef.current - now) / 1000)),
+          currentStamina: toyStaminaRef.current,
+          maxStamina: MAX_STAMINA,
+        };
+      }
+      lastToyClickTimeRef.current = now;
+
+      // 2. Kiểm tra nếu Mèo đang trong thời gian nghỉ ngơi hồi sức
+      if (now < toyTiredUntilRef.current) {
+        const remainingSec = Math.max(1, Math.ceil((toyTiredUntilRef.current - now) / 1000));
+        soundManager.playPop(0.65);
+        if (data.settings.hapticsEnabled) {
+          soundManager.triggerHaptic(15);
+        }
+
+        if (clientX !== undefined && clientY !== undefined) {
+          const floatId = `float_toy_tired_${now}_${Math.random()}`;
+          setFloatingItems((prev) => [
+            ...prev.slice(-15),
+            {
+              id: floatId,
+              x: clientX,
+              y: clientY,
+              text: `💤 Boss đang nghỉ (${remainingSec}s)`,
+              isCrit: false,
+              fishImage: '',
+              fishName: 'Mèo đang hồi sức...',
+              rarityColor: '#9CA3AF',
+            },
+          ]);
+        }
+
+        return {
+          gainedCoins: 0,
+          success: false,
+          ratePercent: config.ratePercent,
+          toyName,
+          isTired: true,
+          remainingCooldownSec: remainingSec,
+          currentStamina: 0,
+          maxStamina: MAX_STAMINA,
+        };
+      }
+
+      // Nếu đã qua thời gian hồi sức, phục hồi lại thể lực đầy đủ
+      if (toyTiredUntilRef.current > 0 && now >= toyTiredUntilRef.current) {
+        toyTiredUntilRef.current = 0;
+        toyStaminaRef.current = MAX_STAMINA;
+      }
+
+      // Xoá bộ đếm nghỉ tay trước đó
+      if (toyIdleTimerRef.current) {
+        clearTimeout(toyIdleTimerRef.current);
+      }
+
+      // 3. Giảm thể lực sau mỗi lần nhấp chơi đồ chơi
+      toyStaminaRef.current = Math.max(0, toyStaminaRef.current - 1);
+
+      // Nếu thể lực chạm 0: MÈO BỊ MỆT SAU 8 LẦN CLICK LIÊN TIẾP!
+      if (toyStaminaRef.current <= 0) {
+        toyTiredUntilRef.current = now + RECOVERY_MS;
+        soundManager.playPop(0.6);
+        if (data.settings.hapticsEnabled) {
+          soundManager.triggerHaptic(30);
+        }
+
+        if (clientX !== undefined && clientY !== undefined) {
+          const floatId = `float_toy_tired_${now}_${Math.random()}`;
+          setFloatingItems((prev) => [
+            ...prev.slice(-15),
+            {
+              id: floatId,
+              x: clientX,
+              y: clientY,
+              text: `😿 Boss mệt rồi! Nghỉ 12s nhé...`,
+              isCrit: false,
+              fishImage: '',
+              fishName: 'Chơi quá sức meow~',
+              rarityColor: '#EF4444',
+            },
+          ]);
+        }
+
+        return {
+          gainedCoins: 0,
+          success: false,
+          ratePercent: config.ratePercent,
+          toyName,
+          isTired: true,
+          remainingCooldownSec: 12,
+          currentStamina: 0,
+          maxStamina: MAX_STAMINA,
+        };
+      }
+
+      // Tự động phục hồi thể lực đầy cây nếu người chơi dừng chơi trong 3.5 giây
+      toyIdleTimerRef.current = setTimeout(() => {
+        toyStaminaRef.current = MAX_STAMINA;
+      }, 3500);
+
+      // 4. Nếu mèo chưa mệt: tính tỉ lệ nhận thưởng đồ chơi bình thường
       const roll = Math.random();
       const isSuccess = roll < config.rate;
       let gained = 0;
@@ -612,7 +904,7 @@ export function useGameState() {
         });
 
         if (clientX !== undefined && clientY !== undefined) {
-          const floatId = `float_toy_${Date.now()}_${Math.random()}`;
+          const floatId = `float_toy_${now}_${Math.random()}`;
           setFloatingItems((prev) => [
             ...prev.slice(-15),
             {
@@ -622,7 +914,7 @@ export function useGameState() {
               text: `+${gained} Xu`,
               isCrit: gained > 1,
               fishImage: toy?.image || '',
-              fishName: `Chơi ${toyName}`,
+              fishName: `Chơi ${toyName} (${toyStaminaRef.current}/8⚡)`,
               rarityColor: '#F59E0B',
             },
           ]);
@@ -646,6 +938,9 @@ export function useGameState() {
         success: isSuccess,
         ratePercent: config.ratePercent,
         toyName,
+        isTired: false,
+        currentStamina: toyStaminaRef.current,
+        maxStamina: MAX_STAMINA,
       };
     },
     [data.settings.hapticsEnabled]
@@ -1549,14 +1844,19 @@ export function useGameState() {
     soundManager.playPop();
   }, []);
 
-  // Đăng xuất và reset toàn bộ dữ liệu game về ban đầu (Level 1, 0 xu, 0 xp)
+  // Đăng xuất và lưu an toàn toàn bộ dữ liệu game
   const logoutGame = useCallback(async () => {
     const activeUser = currentUser || authService.getCurrentUser();
+    const latestData = dataRef.current;
 
-    // 1. Tự động lưu toàn bộ dữ liệu hiện tại lên Cloud TRƯỚC KHI đăng xuất
-    if (activeUser && !activeUser.isAnonymous && auth.currentUser) {
+    // 1. Sao lưu cục bộ tài khoản trước khi đăng xuất
+    if (activeUser?.username) {
+      saveUserGame(activeUser.username, latestData);
+    }
+
+    // 2. Tự động lưu toàn bộ dữ liệu hiện tại lên Cloud TRƯỚC KHI đăng xuất (nếu có tài khoản Firebase)
+    if (activeUser && !activeUser.isAnonymous && auth.currentUser && auth.currentUser.uid === activeUser.uid && !activeUser.uid.startsWith('local_')) {
       try {
-        const latestData = dataRef.current;
         const lvl = calculateLevelFromTotalXp(latestData.xp || 0);
         const stg = getCatGrowthStage(lvl.level);
         const userCatName = (latestData.catName && latestData.catName !== 'Mèo Cưng')
@@ -1595,12 +1895,15 @@ export function useGameState() {
       }
     }
 
-    // 2. Sau khi lưu thành công lên Cloud, mới gọi đăng xuất Firebase Auth & xoá phiên đăng nhập
+    // 3. Sau khi lưu thành công, mới gọi đăng xuất Firebase Auth & xoá phiên đăng nhập
     await authService.logout();
 
-    // 3. Reset toàn bộ dữ liệu game về ban đầu (Level 1, 0 xu, 0 xp, mèo ban đầu)
-    resetSavedGame();
+    // 4. Đưa phiên chơi về trạng thái khách mới
     setData({
+      ...DEFAULT_SAVE_DATA,
+      lastSaved: Date.now(),
+    });
+    saveGame({
       ...DEFAULT_SAVE_DATA,
       lastSaved: Date.now(),
     });

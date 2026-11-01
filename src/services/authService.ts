@@ -9,8 +9,20 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { DEFAULT_SAVE_DATA, type GameSaveData } from '../utils/saveGame';
+import { DEFAULT_SAVE_DATA, type GameSaveData, saveUserGame, loadUserGame } from '../utils/saveGame';
 import { calculateLevelFromTotalXp, getCatGrowthStage } from '../data/rankTiers';
+
+export function toSafeEmailUser(username: string): string {
+  const ascii = username
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return ascii || `user_${Date.now()}`;
+}
 
 export interface UserProfileInfo {
   uid: string;
@@ -103,7 +115,8 @@ export const authService = {
     let uid = '';
 
     // Đăng ký trực tiếp với Firebase Auth để tài khoản được lưu trên Firebase
-    const emailSynthetic = `${cleanUser}@purrfish.com`;
+    const safeUser = toSafeEmailUser(cleanUser);
+    const emailSynthetic = `${safeUser}@purrfish.com`;
     const firebasePass = cleanPass.length >= 6 ? cleanPass : `${cleanPass}000000`.slice(0, 8);
 
     try {
@@ -167,6 +180,9 @@ export const authService = {
       catAvatar: photoURL,
       photoURL,
     };
+
+    // Luôn sao lưu vào slot lưu cục bộ của tài khoản này
+    saveUserGame(cleanUser, fullSaveData);
 
     try {
       if (auth.currentUser && auth.currentUser.uid === uid) {
@@ -246,11 +262,13 @@ export const authService = {
       `${cleanPass}000000`,
     ].filter((p, i, arr) => p.length >= 6 && arr.indexOf(p) === i);
 
+    const safeUser = toSafeEmailUser(cleanUser);
     const emailVariants = [
+      `${safeUser}@purrfish.com`,
       `${cleanUser}@purrfish.com`,
       `${cleanUser}@purrfish.local`,
       `${cleanUser}@purrfish`,
-    ];
+    ].filter((e, i, a) => a.indexOf(e) === i);
 
     let firebaseUser: User | null = null;
     let authError: any = null;
@@ -289,9 +307,14 @@ export const authService = {
       saveLocalUsers(localUsers);
       localStorage.setItem(CURRENT_LOCAL_USER_KEY, JSON.stringify(updatedEntry));
 
+      const savedUserGame = loadUserGame(cleanUser);
+      if (savedUserGame) {
+        saveUserGame(cleanUser, savedUserGame);
+      }
+
       return {
         uid,
-        email: firebaseUser.email || `${cleanUser}@purrfish.com`,
+        email: firebaseUser.email || `${safeUser}@purrfish.com`,
         displayName,
         catName,
         username: cleanUser,
@@ -309,7 +332,7 @@ export const authService = {
 
       // Người chơi nhập ĐÚNG mật khẩu đã lưu trên máy:
       // Tự động tạo hoặc phục hồi Firebase Auth để đồng bộ Cloud
-      const canonicalEmail = `${cleanUser}@purrfish.com`;
+      const canonicalEmail = `${safeUser}@purrfish.com`;
       const canonicalPass = cleanPass.length >= 6 ? cleanPass : `${cleanPass}000000`.slice(0, 8);
       let resolvedUid = target.uid;
       try {
@@ -333,6 +356,11 @@ export const authService = {
       localUsers[cleanUser] = target;
       saveLocalUsers(localUsers);
       localStorage.setItem(CURRENT_LOCAL_USER_KEY, JSON.stringify(target));
+
+      const savedUserGame = loadUserGame(cleanUser);
+      if (savedUserGame) {
+        saveUserGame(cleanUser, savedUserGame);
+      }
 
       return {
         uid: resolvedUid,

@@ -13,9 +13,8 @@ export const cloudSaveService = {
    */
   async saveToCloud(uid: string, data: GameSaveData): Promise<boolean> {
     try {
-      if (!uid) return false;
-      if (!auth.currentUser) {
-        console.warn('Không thể lưu lên Cloud: Người dùng chưa đăng nhập hoặc phiên đã kết thúc.');
+      if (!uid || uid.startsWith('local_')) return false;
+      if (!auth.currentUser || auth.currentUser.uid !== uid) {
         return false;
       }
 
@@ -45,7 +44,7 @@ export const cloudSaveService = {
       await setDoc(ref, cleanData, { merge: true });
       return true;
     } catch (err) {
-      console.error('Lỗi lưu cloud Firestore (/users):', err);
+      console.warn('Lưu cloud Firestore tạm hoãn (đang offline hoặc chưa kết nối):', err);
       return false;
     }
   },
@@ -55,7 +54,10 @@ export const cloudSaveService = {
    */
   async loadFromCloud(uid: string): Promise<GameSaveData | null> {
     try {
-      if (!uid) return null;
+      if (!uid || uid.startsWith('local_')) return null;
+      if (!auth.currentUser || auth.currentUser.uid !== uid) {
+        return null;
+      }
       const ref = doc(db, 'users', uid);
       const snapshot = await getDoc(ref);
       if (snapshot.exists()) {
@@ -65,7 +67,7 @@ export const cloudSaveService = {
       }
       return null;
     } catch (err) {
-      console.error('Lỗi tải cloud Firestore (/users):', err);
+      console.warn('Tải cloud Firestore tạm hoãn (đang offline hoặc chưa kết nối):', err);
       return null;
     }
   },

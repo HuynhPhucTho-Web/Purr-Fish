@@ -144,6 +144,45 @@ export const DEFAULT_SAVE_DATA: GameSaveData = {
   lastSaved: Date.now(),
 };
 
+export function getUserSaveKey(usernameOrUid?: string): string {
+  if (!usernameOrUid) return SAVE_KEY;
+  const clean = usernameOrUid.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  return `MEOW_FISH_SAVE_${clean}`;
+}
+
+export function saveUserGame(usernameOrUid: string | undefined, data: GameSaveData): boolean {
+  try {
+    const updatedData = {
+      ...data,
+      coins: data.fish,
+      lastSaved: Date.now(),
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(updatedData));
+    if (usernameOrUid) {
+      localStorage.setItem(getUserSaveKey(usernameOrUid), JSON.stringify(updatedData));
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to save game to localStorage:', err);
+    return false;
+  }
+}
+
+export function loadUserGame(usernameOrUid?: string): GameSaveData | null {
+  try {
+    if (usernameOrUid) {
+      const userRaw = localStorage.getItem(getUserSaveKey(usernameOrUid));
+      if (userRaw) {
+        const parsed = JSON.parse(userRaw) as Partial<GameSaveData>;
+        return sanitizeSaveData(parsed);
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Saves game state into localStorage
  */
@@ -155,6 +194,9 @@ export function saveGame(data: GameSaveData): boolean {
       lastSaved: Date.now(),
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(updatedData));
+    if (data.username) {
+      localStorage.setItem(getUserSaveKey(data.username), JSON.stringify(updatedData));
+    }
     return true;
   } catch (err) {
     console.error('Failed to save game to localStorage:', err);
